@@ -112,19 +112,19 @@ This repository includes automated Docker image building and pushing to Docker H
 - `DOCKER_PASSWORD` - Docker Hub password or access token
 
 **Docker Hub repository:**
-- Image: `vulnerable-graphql-bookstore`
+- Image: `graphql`
 - Tags: `latest`, branch names, version tags
 
 **Manual build and push:**
 ```bash
 # Build locally
-docker build -t vulnerable-graphql-bookstore:latest .
+docker build -t graphql:latest .
 
 # Login to Docker Hub
 docker login
 
 # Push to Docker Hub
-docker push vulnerable-graphql-bookstore:latest
+docker push graphql:latest
 ```
 
 Access GraphQL Playground at: http://localhost:4000/
