@@ -99,6 +99,34 @@ docker-compose up -d
 # Database runs automatically in container
 ```
 
+### GitHub Actions & Docker Hub
+
+This repository includes automated Docker image building and pushing to Docker Hub via GitHub Actions.
+
+**Workflow triggers:**
+- Push to `main` or `master` branches
+- New version tags (e.g., `v1.0.0`)
+
+**Required secrets (configure in repository Settings → Secrets and variables → Actions):**
+- `DOCKER_USERNAME` - Your Docker Hub username
+- `DOCKER_PASSWORD` - Docker Hub password or access token
+
+**Docker Hub repository:**
+- Image: `vulnerable-graphql-bookstore`
+- Tags: `latest`, branch names, version tags
+
+**Manual build and push:**
+```bash
+# Build locally
+docker build -t vulnerable-graphql-bookstore:latest .
+
+# Login to Docker Hub
+docker login
+
+# Push to Docker Hub
+docker push vulnerable-graphql-bookstore:latest
+```
+
 Access GraphQL Playground at: http://localhost:4000/
 
 ## Default Users

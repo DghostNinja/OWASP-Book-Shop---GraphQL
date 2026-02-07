@@ -16,10 +16,10 @@
 #include <jwt.h>
 #include <curl/curl.h>
 
-#define PORT 4000
+#define PORT (getenv("PORT") ? atoi(getenv("PORT")) : 4000)
 #define BUFFER_SIZE 65536
-#define JWT_SECRET "CHANGE_ME_IN_PRODUCTION_real_jwt_secret_key_2024"
-#define DB_CONN "dbname=bookstore_db user=bookstore_user password=bookstore_password host=localhost port=5432"
+#define JWT_SECRET (getenv("JWT_SECRET") ? getenv("JWT_SECRET") : "CHANGE_ME_IN_PRODUCTION_real_jwt_secret_key_2024")
+#define DB_CONN (getenv("DB_CONNECTION_STRING") ? getenv("DB_CONNECTION_STRING") : "dbname=bookstore_db user=bookstore_user password=bookstore_password host=localhost port=5432")
 
 using namespace std;
 

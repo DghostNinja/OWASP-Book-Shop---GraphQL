@@ -61,6 +61,49 @@ pkill -f bookstore-server
 lsof -ti:4000 | xargs kill -9
 ```
 
+### Docker Deployment
+```bash
+# Build and run with docker-compose
+docker-compose up --build
+
+# Server will be available at http://localhost:4000
+# Database runs automatically in container
+
+# Stop containers
+docker-compose down
+
+# Rebuild after code changes
+docker-compose up --build --force-recreate
+```
+
+### Environment Variables
+The following environment variables can be set to configure the server:
+- `PORT` - Server port (default: 4000)
+- `JWT_SECRET` - JWT signing secret (default: hardcoded weak secret)
+- `DB_CONNECTION_STRING` - PostgreSQL connection string
+
+Example:
+```bash
+export PORT=4000
+export JWT_SECRET="your-secret-here"
+export DB_CONNECTION_STRING="dbname=bookstore_db user=bookstore_user password=bookstore_password host=localhost port=5432"
+./bookstore-server
+```
+
+### GitHub Actions
+The repository includes a GitHub Actions workflow (`.github/workflows/docker-build.yml`) that:
+- Builds the Docker image on push to main/master branches
+- Builds and tags releases on version tags
+- Pushes to Docker Hub (requires `DOCKER_USERNAME` and `DOCKER_PASSWORD` secrets)
+
+Required GitHub Secrets:
+- `DOCKER_USERNAME` - Docker Hub username
+- `DOCKER_PASSWORD` - Docker Hub password/access token
+
+Push to Docker Hub happens automatically on:
+- Push to `main` or `master` branch
+- New version tags (e.g., `v1.0.0`)
+
 ## Code Style Guidelines
 
 ### Language & Standards
