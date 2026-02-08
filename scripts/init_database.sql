@@ -1,9 +1,6 @@
 -- Initialize bookstore database schema
+-- Note: Database must already exist (created by PostgreSQL Docker image)
 -- Run as postgres superuser or with appropriate privileges
-
--- Create database
-DROP DATABASE IF EXISTS bookstore_db;
-CREATE DATABASE bookstore_db;
 
 \c bookstore_db;
 
@@ -11,7 +8,7 @@ CREATE DATABASE bookstore_db;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Users table with username-based authentication
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
@@ -31,7 +28,7 @@ CREATE TABLE users (
 );
 
 -- Categories table
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) UNIQUE NOT NULL,
     description TEXT,
@@ -40,7 +37,7 @@ CREATE TABLE categories (
 );
 
 -- Authors table
-CREATE TABLE authors (
+CREATE TABLE IF NOT EXISTS authors (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     bio TEXT,
@@ -50,7 +47,7 @@ CREATE TABLE authors (
 );
 
 -- Books table
-CREATE TABLE books (
+CREATE TABLE IF NOT EXISTS books (
     id SERIAL PRIMARY KEY,
     isbn VARCHAR(20) UNIQUE NOT NULL,
     title VARCHAR(500) NOT NULL,
@@ -79,7 +76,7 @@ CREATE TABLE books (
 );
 
 -- Reviews table
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
     id SERIAL PRIMARY KEY,
     user_id UUID REFERENCES users(id),
     book_id INTEGER REFERENCES books(id),
@@ -93,7 +90,7 @@ CREATE TABLE reviews (
 );
 
 -- Shopping carts table
-CREATE TABLE shopping_carts (
+CREATE TABLE IF NOT EXISTS shopping_carts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id) UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -101,7 +98,7 @@ CREATE TABLE shopping_carts (
 );
 
 -- Cart items table
-CREATE TABLE cart_items (
+CREATE TABLE IF NOT EXISTS cart_items (
     id SERIAL PRIMARY KEY,
     cart_id UUID REFERENCES shopping_carts(id),
     book_id INTEGER REFERENCES books(id),
@@ -111,7 +108,7 @@ CREATE TABLE cart_items (
 );
 
 -- Orders table
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id),
     order_number VARCHAR(50) UNIQUE NOT NULL,
@@ -134,7 +131,7 @@ CREATE TABLE orders (
 );
 
 -- Order items table
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
     id SERIAL PRIMARY KEY,
     order_id UUID REFERENCES orders(id),
     book_id INTEGER REFERENCES books(id),
@@ -146,7 +143,7 @@ CREATE TABLE order_items (
 );
 
 -- Coupons table
-CREATE TABLE coupons (
+CREATE TABLE IF NOT EXISTS coupons (
     id SERIAL PRIMARY KEY,
     code VARCHAR(100) UNIQUE NOT NULL,
     description TEXT,
@@ -164,7 +161,7 @@ CREATE TABLE coupons (
 );
 
 -- Coupon usage tracking
-CREATE TABLE coupon_usage (
+CREATE TABLE IF NOT EXISTS coupon_usage (
     id SERIAL PRIMARY KEY,
     coupon_id INTEGER REFERENCES coupons(id),
     user_id UUID REFERENCES users(id),
@@ -175,7 +172,7 @@ CREATE TABLE coupon_usage (
 );
 
 -- Payment transactions table
-CREATE TABLE payment_transactions (
+CREATE TABLE IF NOT EXISTS payment_transactions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     order_id UUID REFERENCES orders(id),
     user_id UUID REFERENCES users(id),
@@ -190,7 +187,7 @@ CREATE TABLE payment_transactions (
 );
 
 -- Audit logs table
-CREATE TABLE audit_logs (
+CREATE TABLE IF NOT EXISTS audit_logs (
     id SERIAL PRIMARY KEY,
     user_id UUID REFERENCES users(id),
     action VARCHAR(100) NOT NULL,
@@ -204,90 +201,20 @@ CREATE TABLE audit_logs (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_books_category ON books(category_id);
-CREATE INDEX idx_books_author ON books(author_id);
-CREATE INDEX idx_books_isbn ON books(isbn);
-CREATE INDEX idx_reviews_user ON reviews(user_id);
-CREATE INDEX idx_reviews_book ON reviews(book_id);
-CREATE INDEX idx_orders_user ON orders(user_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
-CREATE INDEX idx_cart_items_cart ON cart_items(cart_id);
-
--- Insert default users (plaintext passwords for educational server)
--- VULNERABILITY: Storing plaintext passwords
-INSERT INTO users (username, password_hash, first_name, last_name, role) VALUES
-('admin', 'password123', 'Admin', 'User', 'admin'),
-('staff', 'password123', 'Staff', 'Member', 'staff'),
-('user', 'password123', 'Regular', 'User', 'user');
-
--- Insert sample categories
-INSERT INTO categories (name, description) VALUES
-('Fiction', 'Fictional literature'),
-('Non-Fiction', 'Non-fictional works'),
-('Science Fiction', 'Science fiction and fantasy'),
-('Mystery', 'Mystery and thriller novels'),
-('Biography', 'Biographical works'),
-('Technical', 'Technical and programming books');
-
--- Insert sample authors
-INSERT INTO authors (name, bio) VALUES
-('John Smith', 'Bestselling fiction author'),
-('Jane Doe', 'Technical writer and developer'),
-('Bob Johnson', 'Science fiction novelist'),
-('Alice Williams', 'Mystery thriller writer');
-
--- Insert sample books
-INSERT INTO books (isbn, title, description, author_id, category_id, price, stock_quantity, is_featured) VALUES
-('9780132350884', 'Clean Code', 'A handbook of agile software craftsmanship', 2, 6, 42.99, 25, true),
-('9780201633610', 'Design Patterns', 'Elements of Reusable Object-Oriented Software', 2, 6, 54.99, 15, true),
-('9780321125217', 'Domain-Driven Design', 'Tackling Complexity in Heart of Software', 2, 6, 49.99, 20, false),
-('9780735619678', 'Code Complete', 'A Practical Handbook of Software Construction', 2, 6, 39.99, 30, false),
-('9780345391803', 'The Hitchhiker''s Guide to the Galaxy', 'A sci-fi comedy classic', 3, 3, 14.99, 50, true),
-('9780345391802', 'The Restaurant at the End of the Universe', 'Second book in trilogy', 3, 3, 14.99, 45, false);
-
--- Insert sample coupons
-INSERT INTO coupons (code, description, discount_type, discount_value, min_order_amount, usage_limit) VALUES
-('WELCOME10', 'Welcome discount for new users', 'percentage', 10.0, 0, 100),
-('FLAT20', 'Flat $20 off orders over $100', 'fixed', 20.0, 100.0, 50),
-('SUMMER25', 'Summer sale - 25% off', 'percentage', 25.0, 50.0, 200);
-
--- Insert sample reviews
-INSERT INTO reviews (user_id, book_id, rating, comment, is_verified_purchase, is_approved) 
-SELECT u.id, b.id, 5, 'Excellent book! Highly recommended.', true, true
-FROM users u, books b
-WHERE u.username = 'user' AND b.id IN (1, 2);
-
--- Create shopping carts for users
-INSERT INTO shopping_carts (user_id) 
-SELECT id FROM users WHERE username = 'user';
-
--- Add items to cart
-INSERT INTO cart_items (cart_id, book_id, quantity)
-SELECT sc.id, b.id, 2
-FROM shopping_carts sc, books b, users u
-WHERE u.username = 'user' AND sc.user_id = u.id AND b.id = 1;
-
--- Create sample orders
-INSERT INTO orders (user_id, order_number, status, subtotal, total_amount, shipping_address, billing_address, payment_status)
-SELECT u.id, 'ORD-001', 'delivered', 42.99, 45.99, '123 Test St', '123 Test St', 'completed'
-FROM users u WHERE u.username = 'user';
-
--- Add order items
-INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price)
-SELECT o.id, b.id, b.title, b.isbn, 1, b.price, b.price
-FROM orders o, books b, users u
-WHERE u.username = 'user' AND o.user_id = u.id AND b.id = 1;
-
--- Add audit logs
-INSERT INTO audit_logs (user_id, action, entity_type, entity_id, ip_address) 
-SELECT id, 'LOGIN', 'user', id::text, '127.0.0.1'::inet
-FROM users;
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_books_category ON books(category_id);
+CREATE INDEX IF NOT EXISTS idx_books_author ON books(author_id);
+CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
+CREATE INDEX IF NOT EXISTS idx_reviews_user ON reviews(user_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_book ON reviews(book_id);
+CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items(cart_id);
 
 -- Webhooks table for SSRF vulnerabilities
-CREATE TABLE webhooks (
+CREATE TABLE IF NOT EXISTS webhooks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(id),
     url VARCHAR(500) NOT NULL,
@@ -299,13 +226,8 @@ CREATE TABLE webhooks (
     failure_count INTEGER DEFAULT 0
 );
 
--- Insert sample webhook for testing SSRF
-INSERT INTO webhooks (user_id, url, events, secret) 
-SELECT id, 'http://example.com/webhook', '["ORDER_CREATED"]', 'webhook_secret_123'
-FROM users WHERE username = 'admin';
-
 -- Search logs for injection testing
-CREATE TABLE search_logs (
+CREATE TABLE IF NOT EXISTS search_logs (
     id SERIAL PRIMARY KEY,
     user_id UUID REFERENCES users(id),
     query TEXT NOT NULL,
@@ -316,7 +238,7 @@ CREATE TABLE search_logs (
 );
 
 -- Admin-only: System configuration (exposed via BOLA)
-CREATE TABLE system_config (
+CREATE TABLE IF NOT EXISTS system_config (
     id SERIAL PRIMARY KEY,
     key VARCHAR(100) UNIQUE NOT NULL,
     value TEXT NOT NULL,
@@ -324,13 +246,6 @@ CREATE TABLE system_config (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Insert sensitive config
-INSERT INTO system_config (key, value, is_sensitive) VALUES
-('jwt_secret', 'CHANGE_ME_IN_PRODUCTION_real_jwt_secret_key_2024', true),
-('db_password', 'bookstore_password', true),
-('stripe_api_key', 'sk_test_123456789', true),
-('aws_access_key', 'AKIAIOSFODNN7EXAMPLE', true);
 
 -- Grant privileges
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO public;

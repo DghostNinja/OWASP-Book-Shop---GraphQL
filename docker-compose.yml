@@ -11,7 +11,8 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./scripts/init_database.sql:/docker-entrypoint-initdb.d/1-schema.sql
+      - ./scripts/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bookstore_user"]
       interval: 10s
