@@ -1672,7 +1672,7 @@ int main() {
         bool isPostRequest = (request.find("POST") == 0 && request.find("/graphql") != string::npos);
         bool isGetRequest = (request.find("GET") == 0);
         
-        if (isGetRequest && request.find("GET / ") != string::npos) {
+        if (isGetRequest) {
             string html = generatePlaygroundHTML();
             string response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: " + to_string(html.length()) + "\r\n\r\n";
             response += html;
@@ -1681,127 +1681,115 @@ int main() {
             continue;
         }
         
-        if (isPostRequest) {
-            string authHeaderStr = "";
-            
-            if (authHeaderPos != string::npos) {
-                size_t authEnd = request.find("\r\n", authHeaderPos);
-                if (authEnd != string::npos) {
-                    authHeaderStr = request.substr(authHeaderPos, authEnd - authHeaderPos);
+            if (isPostRequest) {
+                string authHeaderStr = "";
+                
+                if (authHeaderPos != string::npos) {
+                    size_t authEnd = request.find("\r\n", authHeaderPos);
+                    if (authEnd != string::npos) {
+                        authHeaderStr = request.substr(authHeaderPos, authEnd - authHeaderPos);
+                    }
                 }
-            }
-            
-            User currentUser = extractAuthUser(authHeaderStr);
-            
-            // Try different body separators (curl vs browser)
-            size_t bodyStart = request.find("\r\n\r\n");
-            int offset = 4;
-            if (bodyStart == string::npos) {
-                bodyStart = request.find("\n\n");
-                offset = 2;
-            }
-            if (bodyStart == string::npos) {
-                bodyStart = request.find("\r\r");
-                offset = 2;
-            }
-            
-            string queryStr = "";
-            string body = "";
+                
+                User currentUser = extractAuthUser(authHeaderStr);
+                
+                size_t bodyStart = request.find("{");
+                string queryStr = "";
+                string body = "";
+                
+                if (bodyStart != string::npos) {
+                    body = request.substr(bodyStart);
+                    size_t queryStart = body.find("\"query\"");
+                    if (queryStart != string::npos) {
+                        size_t colonPos = body.find(":", queryStart);
+                        if (colonPos != string::npos) {
+                            size_t valueStart = body.find("\"", colonPos + 1);
+                            if (valueStart != string::npos) {
+                                size_t searchPos = valueStart + 1;
+                                size_t valueEnd = string::npos;
+                                int braceDepth = 0;
+                                int parenDepth = 0;
+                                bool inString = true;
 
-            if (bodyStart != string::npos) {
-                body = request.substr(bodyStart + offset);
-
-                size_t queryStart = body.find("\"query\"");
-                if (queryStart != string::npos) {
-                    size_t colonPos = body.find(":", queryStart);
-                    if (colonPos != string::npos) {
-                        size_t valueStart = body.find("\"", colonPos + 1);
-                        if (valueStart != string::npos) {
-                            size_t searchPos = valueStart + 1;
-                            size_t valueEnd = string::npos;
-                            int braceDepth = 0;
-                            int parenDepth = 0;
-                            bool inString = true;
-
-                            for (size_t i = searchPos; i < body.length(); i++) {
-                                char c = body[i];
-                                if (inString) {
-                                    if (c == '\\' && i + 1 < body.length()) {
-                                        i++;
-                                        continue;
-                                    }
-                                    if (c == '"' && braceDepth == 0 && parenDepth == 0) {
-                                        valueEnd = i;
-                                        break;
-                                    }
-                                } else {
-                                    if (c == '{') braceDepth++;
-                                    else if (c == '}') braceDepth--;
-                                    else if (c == '(') parenDepth++;
-                                    else if (c == ')') parenDepth--;
-                                    else if (c == '"') inString = !inString;
-                                }
-                            }
-
-                            if (valueEnd != string::npos && valueEnd > valueStart) {
-                                queryStr = body.substr(valueStart + 1, valueEnd - valueStart - 1);
-                                string unescaped;
-                                for (size_t i = 0; i < queryStr.length(); i++) {
-                                    if (queryStr[i] == '\\' && i + 1 < queryStr.length()) {
-                                        char next = queryStr[i + 1];
-                                        if (next == 'n') { unescaped += '\n'; i++; }
-                                        else if (next == 't') { unescaped += '\t'; i++; }
-                                        else if (next == '"') { unescaped += '"'; i++; }
-                                        else if (next == '\\') { unescaped += '\\'; i++; }
-                                        else if (next == '/') { unescaped += '/'; i++; }
-                                        else if (next == 'b') { unescaped += '\b'; i++; }
-                                        else if (next == 'f') { unescaped += '\f'; i++; }
-                                        else if (next == 'r') { unescaped += '\r'; i++; }
-                                        else { unescaped += queryStr[i]; }
+                                for (size_t i = searchPos; i < body.length(); i++) {
+                                    char c = body[i];
+                                    if (inString) {
+                                        if (c == '\\' && i + 1 < body.length()) {
+                                            i++;
+                                            continue;
+                                        }
+                                        if (c == '"' && braceDepth == 0 && parenDepth == 0) {
+                                            valueEnd = i;
+                                            break;
+                                        }
                                     } else {
-                                        unescaped += queryStr[i];
+                                        if (c == '{') braceDepth++;
+                                        else if (c == '}') braceDepth--;
+                                        else if (c == '(') parenDepth++;
+                                        else if (c == ')') parenDepth--;
+                                        else if (c == '"') inString = !inString;
                                     }
                                 }
-                                queryStr = unescaped;
+
+                                if (valueEnd != string::npos && valueEnd > valueStart) {
+                                    queryStr = body.substr(valueStart + 1, valueEnd - valueStart - 1);
+                                    string unescaped;
+                                    for (size_t i = 0; i < queryStr.length(); i++) {
+                                        if (queryStr[i] == '\\' && i + 1 < queryStr.length()) {
+                                            char next = queryStr[i + 1];
+                                            if (next == 'n') { unescaped += '\n'; i++; }
+                                            else if (next == 't') { unescaped += '\t'; i++; }
+                                            else if (next == '"') { unescaped += '"'; i++; }
+                                            else if (next == '\\') { unescaped += '\\'; i++; }
+                                            else if (next == '/') { unescaped += '/'; i++; }
+                                            else if (next == 'b') { unescaped += '\b'; i++; }
+                                            else if (next == 'f') { unescaped += '\f'; i++; }
+                                            else if (next == 'r') { unescaped += '\r'; i++; }
+                                            else { unescaped += queryStr[i]; }
+                                        } else {
+                                            unescaped += queryStr[i];
+                                        }
+                                    }
+                                    queryStr = unescaped;
+                                }
                             }
+                        }
+                    }
+
+                    if (queryStr.empty()) {
+                        size_t firstBrace = body.find("{");
+                        int depth = 0;
+                        size_t lastBrace = string::npos;
+                        for (size_t i = firstBrace; i < body.length(); i++) {
+                            if (body[i] == '{') depth++;
+                            else if (body[i] == '}') {
+                                depth--;
+                                if (depth == 0) {
+                                    lastBrace = i;
+                                    break;
+                                }
+                            }
+                        }
+                        if (lastBrace != string::npos) {
+                            queryStr = body.substr(firstBrace, lastBrace - firstBrace + 1);
                         }
                     }
                 }
 
-                if (queryStr.empty() && body.find("{") != string::npos) {
-                    size_t firstBrace = body.find("{");
-                    int depth = 0;
-                    size_t lastBrace = string::npos;
-                    for (size_t i = firstBrace; i < body.length(); i++) {
-                        if (body[i] == '{') depth++;
-                        else if (body[i] == '}') {
-                            depth--;
-                            if (depth == 0) {
-                                lastBrace = i;
-                                break;
-                            }
-                        }
-                    }
-                    if (lastBrace != string::npos) {
-                        queryStr = body.substr(firstBrace, lastBrace - firstBrace + 1);
-                    }
+                bool isMutation = false;
+                string trimmedQuery = queryStr;
+                size_t start = trimmedQuery.find_first_not_of(" \t\n\r");
+                if (start != string::npos) {
+                    trimmedQuery = trimmedQuery.substr(start);
+                    isMutation = (trimmedQuery.find("mutation ") == 0 || trimmedQuery.find("mutation{") == 0);
                 }
-            }
 
-            bool isMutation = false;
-            string trimmedQuery = queryStr;
-            size_t start = trimmedQuery.find_first_not_of(" \t\n\r");
-            if (start != string::npos) {
-                trimmedQuery = trimmedQuery.substr(start);
-                isMutation = (trimmedQuery.find("mutation ") == 0 || trimmedQuery.find("mutation{") == 0);
-            }
+                string responseBody = handleRequest(queryStr, currentUser, isMutation);
 
-            string responseBody = handleRequest(queryStr, currentUser, isMutation);
-
-            string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: " + to_string(responseBody.length()) + "\r\n\r\n";
-            response += responseBody;
-            send(clientSocket, response.c_str(), response.length(), 0);
-        } else if (request.find("OPTIONS") == 0) {
+                string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: " + to_string(responseBody.length()) + "\r\n\r\n";
+                response += responseBody;
+                send(clientSocket, response.c_str(), response.length(), 0);
+            } else if (request.find("OPTIONS") == 0) {
             string response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Max-Age: 3600\r\nContent-Length: 0\r\n\r\n";
             send(clientSocket, response.c_str(), response.length(), 0);
         }
