@@ -1784,7 +1784,12 @@ int main() {
                     isMutation = (trimmedQuery.find("mutation ") == 0 || trimmedQuery.find("mutation{") == 0);
                 }
 
+                cerr << "[REQUEST] Query: " << queryStr.substr(0, 100) << "..." << endl;
+                cerr << "[REQUEST] IsMutation: " << (isMutation ? "true" : "false") << endl;
+
                 string responseBody = handleRequest(queryStr, currentUser, isMutation);
+
+                cerr << "[RESPONSE] " << responseBody.substr(0, 100) << "..." << endl;
 
                 string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: " + to_string(responseBody.length()) + "\r\n\r\n";
                 response += responseBody;
