@@ -1667,30 +1667,26 @@ int main() {
 
             if (bodyStart != string::npos) {
                 body = request.substr(bodyStart + offset);
-                cout << "[REQUEST] Raw body: " << body.substr(0, min((size_t)500, body.length())) << endl;
+                cout << "[REQUEST] Raw body: " << body << endl;
 
-                // First, try to find the query field in JSON
-                size_t queryPos = body.find("\"query\"");
-                cout << "[REQUEST] queryPos: " << queryPos << endl;
-
-                if (queryPos != string::npos) {
-                    size_t colonPos = body.find(":", queryPos);
+                // Find the "query" field value - extract everything between quotes
+                size_t queryKeyPos = body.find("\"query\"");
+                if (queryKeyPos != string::npos) {
+                    size_t colonPos = body.find(":", queryKeyPos);
                     if (colonPos != string::npos) {
-                        size_t quoteStart = body.find("\"", colonPos + 1);
-                        if (quoteStart != string::npos) {
-                            size_t actualStart = quoteStart + 1;
-                            size_t quoteEnd = body.find("\"", actualStart);
-
-                            // Handle escaped quotes in the query string
-                            while (quoteEnd != string::npos && quoteEnd > 0 && body[quoteEnd - 1] == '\\') {
-                                quoteEnd = body.find("\"", quoteEnd + 1);
+                        // Find the first quote after the colon
+                        size_t firstQuote = body.find("\"", colonPos + 1);
+                        if (firstQuote != string::npos) {
+                            // Find the last quote in the body (closing quote of query value)
+                            size_t lastQuote = body.rfind("\"}");
+                            if (lastQuote == string::npos || lastQuote <= firstQuote) {
+                                lastQuote = body.rfind("\"");
                             }
+                            if (lastQuote > firstQuote) {
+                                queryStr = body.substr(firstQuote + 1, lastQuote - firstQuote - 1);
+                                cout << "[REQUEST] Parsed query: " << queryStr << endl;
 
-                            if (quoteEnd != string::npos) {
-                                queryStr = body.substr(actualStart, quoteEnd - actualStart);
-                                cout << "[REQUEST] Parsed query: " << queryStr.substr(0, min((size_t)200, queryStr.length())) << endl;
-
-                                // Unescape quotes in the query string
+                                // Unescape quotes
                                 size_t pos = 0;
                                 while ((pos = queryStr.find("\\\"", pos)) != string::npos) {
                                     queryStr.replace(pos, 2, "\"");
