@@ -8,10 +8,10 @@ echo "========================================"
 # Check for g++
 command -v g++ >/dev/null 2>&1 || { echo "g++ is required but not installed. Aborting." >&2; exit 1; }
 
-echo "Building server with PostgreSQL, JWT, and CURL support..."
+echo "Building server with PostgreSQL, JWT, CURL, and pthread support..."
 
 # Build the full version with database support
-g++ -std=c++17 -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
+g++ -std=c++17 -pthread -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
 
 if [ $? -eq 0 ]; then
     echo "========================================"

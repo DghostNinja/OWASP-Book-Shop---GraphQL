@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 #include <postgresql/libpq-fe.h>
 #include <jwt.h>
 #include <curl/curl.h>
@@ -1550,6 +1551,31 @@ void cleanupPort() {
     cout << "Port cleanup complete." << endl;
 }
 
+void* keepAliveThread(void* arg) {
+    int port = PORT;
+    const char* url = "http://127.0.0.1/graphql";
+    CURL* curl = curl_easy_init();
+    
+    if (!curl) return NULL;
+    
+    while (true) {
+        sleep(480);
+        if (curl) {
+            string fullUrl = string("http://127.0.0.1:") + to_string(port) + "/graphql";
+            curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+            curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+            CURLcode res = curl_easy_perform(curl);
+            if (res == CURLE_OK) {
+                cerr << "[KEEPALIVE] Ping successful" << endl;
+            }
+        }
+    }
+    
+    curl_easy_cleanup(curl);
+    return NULL;
+}
+
 int main() {
     int serverSocket, clientSocket;
     struct sockaddr_in serverAddr, clientAddr;
@@ -1579,7 +1605,11 @@ int main() {
     cout << "Loaded " << reviewsCache.size() << " reviews from database" << endl;
     cout << "Loaded " << webhooksCache.size() << " webhooks from database" << endl;
     
-    cleanupPort();
+    cout << "Port cleanup complete." << endl;
+    
+    pthread_t keepalive_id;
+    pthread_create(&keepalive_id, NULL, keepAliveThread, NULL);
+    pthread_detach(keepalive_id);
     
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {

@@ -24,7 +24,7 @@ COPY scripts/init-db.sh scripts/init-db.sh
 RUN chmod +x scripts/init-db.sh
 
 # Compile the server
-RUN g++ -std=c++17 -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
+RUN g++ -std=c++17 -pthread -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
 
 # Expose port
 EXPOSE 4000
