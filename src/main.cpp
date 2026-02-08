@@ -988,6 +988,8 @@ string handleMutation(const string& query, User& currentUser) {
     if (query.find("login(") != string::npos) {
         string username = extractValue(query, "username");
         string password = extractValue(query, "password");
+        
+        cerr << "[LOGIN] username='" << username << "', password='" << password << "'" << endl;
 
         if (!username.empty() && !password.empty()) {
             User* user = getUserByUsername(username);
@@ -1691,52 +1693,37 @@ int main() {
             
             User currentUser = extractAuthUser(authHeaderStr);
             
-            size_t bodyStart = request.find("\r\n\r\n");
-            if (bodyStart != string::npos) {
-                bodyStart += 4;
-            } else {
-                bodyStart = request.find("\n\n");
-                if (bodyStart != string::npos) bodyStart += 2;
-                else bodyStart = string::npos;
-            }
+            // Find the JSON body - look for { after headers
+            size_t bodyStart = request.find("{");
+            size_t bodyEnd = request.rfind("}");
             
             string queryStr = "";
-            if (bodyStart != string::npos) {
-                string body = request.substr(bodyStart);
+            if (bodyStart != string::npos && bodyEnd != string::npos && bodyEnd > bodyStart) {
+                string body = request.substr(bodyStart, bodyEnd - bodyStart + 1);
                 
-                size_t queryKeyPos = body.find("\"query\":");
+                // Find "query": or "query" :
+                size_t queryKeyPos = body.find("query");
                 if (queryKeyPos != string::npos) {
-                    size_t valueStart = body.find("\"", queryKeyPos + 8);
-                    if (valueStart != string::npos) {
-                        size_t searchPos = valueStart + 1;
-                        size_t valueEnd = string::npos;
-                        
-                        for (size_t i = searchPos; i < body.length(); i++) {
-                            char c = body[i];
-                            if (c == '\\' && i + 1 < body.length()) {
-                                i++;
-                                continue;
+                    // Find the colon after query
+                    size_t colonPos = body.find(":", queryKeyPos);
+                    if (colonPos != string::npos && colonPos < bodyEnd) {
+                        // Find opening quote
+                        size_t openQuote = body.find("\"", colonPos);
+                        if (openQuote != string::npos && openQuote < bodyEnd) {
+                            // Find closing quote
+                            size_t closeQuote = body.find("\"", openQuote + 1);
+                            if (closeQuote != string::npos && closeQuote < bodyEnd) {
+                                queryStr = body.substr(openQuote + 1, closeQuote - openQuote - 1);
                             }
-                            if (c == '"') {
-                                valueEnd = i;
-                                break;
-                            }
-                        }
-                        
-                        if (valueEnd != string::npos && valueEnd > valueStart) {
-                            queryStr = body.substr(valueStart + 1, valueEnd - valueStart - 1);
                         }
                     }
                 }
             }
             
-            bool isMutation = false;
-            string trimmed = queryStr;
-            size_t first = trimmed.find_first_not_of(" \t\n\r");
-            if (first != string::npos) {
-                trimmed = trimmed.substr(first);
-                isMutation = (trimmed.find("mutation") == 0);
-            }
+            bool isMutation = queryStr.find("mutation") != string::npos;
+            
+            cerr << "[DEBUG] Query: '" << queryStr << "'" << endl;
+            cerr << "[DEBUG] IsMutation: " << (isMutation ? "true" : "false") << endl;
             
             string responseBody = handleRequest(queryStr, currentUser, isMutation);
             
