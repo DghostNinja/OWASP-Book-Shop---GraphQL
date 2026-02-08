@@ -94,3 +94,32 @@ jobs:
           docker rm test-api 2>/dev/null || true
           
           echo "Test complete (PostgreSQL required for full functionality)"
+
+      - name: Trigger Render Deployment
+        uses: appleboy/dispatch-action@master
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          repo: DghostNinja/OWASP-Book-Shop---GraphQL
+          workflow: render-deploy.yml
+        if: github.event_name != 'pull_request'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+
+      - name: Trigger Render Deploy via API
+        run: |
+          if [ -n "${{ secrets.RENDER_API_KEY }}" ] && [ -n "${{ secrets.RENDER_SERVICE_ID }}" ]; then
+            echo "=== Triggering Render Deployment ==="
+            curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              -H "Content-Type: application/json" \
+              -d '{"clearCache": false}'
+            echo ""
+            echo "Render deployment triggered!"
+          else
+            echo "RENDER_API_KEY or RENDER_SERVICE_ID not set. Skipping auto-deploy."
+            echo "Add these secrets in GitHub repo Settings → Secrets:"
+            echo "  - RENDER_API_KEY: Your Render API key"
+            echo "  - RENDER_SERVICE_ID: Your Render service ID (from dashboard URL)"
+          fi
+        if: github.event_name != 'pull_request'
