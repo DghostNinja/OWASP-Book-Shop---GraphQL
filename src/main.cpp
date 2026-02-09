@@ -143,34 +143,17 @@ string extractJsonString(const string& body, size_t startPos) {
 }
 
 string extractQueryFromBody(const string& body) {
-    cerr << "[DEBUG] extractQueryFromBody - body length: " << body.length() << endl;
-    cerr << "[DEBUG] extractQueryFromBody - body: " << body << endl;
-
     size_t queryPos = body.find("\"query\"");
     if (queryPos == string::npos) queryPos = body.find("query");
-    if (queryPos == string::npos) {
-        cerr << "[DEBUG] extractQueryFromBody - query key not found" << endl;
-        return "";
-    }
-    cerr << "[DEBUG] extractQueryFromBody - queryPos: " << queryPos << endl;
+    if (queryPos == string::npos) return "";
 
     size_t colonPos = body.find(":", queryPos);
-    if (colonPos == string::npos) {
-        cerr << "[DEBUG] extractQueryFromBody - colon not found" << endl;
-        return "";
-    }
-    cerr << "[DEBUG] extractQueryFromBody - colonPos: " << colonPos << endl;
+    if (colonPos == string::npos) return "";
 
     size_t valueStart = body.find("\"", colonPos + 1);
-    if (valueStart == string::npos) {
-        cerr << "[DEBUG] extractQueryFromBody - opening quote not found" << endl;
-        return "";
-    }
-    cerr << "[DEBUG] extractQueryFromBody - valueStart: " << valueStart << endl;
+    if (valueStart == string::npos) return "";
 
-    string result = extractJsonString(body, valueStart + 1);
-    cerr << "[DEBUG] extractQueryFromBody - result: " << result << endl;
-    return result;
+    return extractJsonString(body, valueStart + 1);
 }
 
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, string* output) {
@@ -234,15 +217,12 @@ string generateJWT(const User& user) {
 
 User verifyJWT(const string& token) {
     User user;
-    cerr << "[DEBUG] verifyJWT called with token length: " << token.length() << endl;
-    cerr << "[DEBUG] JWT_SECRET length: " << strlen(JWT_SECRET) << endl;
+
 
     jwt_t* jwt = nullptr;
 
     int rc = jwt_decode(&jwt, token.c_str(), (unsigned char*)JWT_SECRET, strlen(JWT_SECRET));
-    cerr << "[DEBUG] jwt_decode returned: " << rc << endl;
     if (rc != 0) {
-        cerr << "[DEBUG] JWT verification failed with code: " << rc << endl;
         return user;
     }
 
@@ -251,7 +231,7 @@ User verifyJWT(const string& token) {
     user.role = jwt_get_grant(jwt, "role");
     user.isActive = true;
 
-    cerr << "[DEBUG] JWT decoded - id: " << user.id << ", username: " << user.username << ", role: " << user.role << endl;
+
 
     jwt_free(jwt);
     return user;
@@ -682,22 +662,13 @@ string handleQuery(const string& query, const User& currentUser) {
     response << "{\"data\":{";
     bool firstField = true;
 
-    cerr << "[DEBUG] handleQuery - Query length: " << query.length() << endl;
-    cerr << "[DEBUG] handleQuery - Query: " << query << endl;
-    cerr << "[DEBUG] handleQuery - booksCache size: " << booksCache.size() << endl;
-    cerr << "[DEBUG] handleQuery - dbConn: " << (dbConn ? "valid" : "null") << endl;
-
-    // Check database connection before processing
     if (!checkDatabaseConnection()) {
-        cerr << "[DEBUG] Database connection failed" << endl;
         response << "\"error\":\"Database connection failed\"";
         response << "}}";
         return response.str();
     }
 
     if (query.find("__schema") != string::npos) {
-        cerr << "[DEBUG] Introspection handler triggered" << endl;
-        cerr << "[DEBUG] Query: " << query << endl;
         if (!firstField) response << ",";
         response << "\"__schema\":{";
         response << "\"queryType\":{";
@@ -766,17 +737,11 @@ string handleQuery(const string& query, const User& currentUser) {
         }
     }
 
-    bool booksMatch = (query.find("books(") != string::npos || query.find("books {") != string::npos);
-    cerr << "[DEBUG] booksMatch: " << (booksMatch ? "true" : "false") << endl;
-    cerr << "[DEBUG] query.find(\"books(\"): " << query.find("books(") << endl;
-    cerr << "[DEBUG] query.find(\"books {\"): " << query.find("books {") << endl;
-    if (booksMatch) {
-        cerr << "[DEBUG] Books query matched" << endl;
+    if (query.find("books(") != string::npos || query.find("books {") != string::npos) {
         string searchQuery = extractValue(query, "search");
         string categoryIdStr = extractIntValue(query, "categoryId");
         int categoryId = categoryIdStr.empty() ? 0 : stoi(categoryIdStr);
         vector<Book> books = searchBooks(searchQuery, categoryId);
-        cerr << "[DEBUG] Found " << books.size() << " books" << endl;
         if (!firstField) response << ",";
         response << "\"books\":[";
         for (size_t i = 0; i < books.size(); i++) {
@@ -1806,13 +1771,9 @@ int main() {
                 }
             }
 
-            cerr << "[DEBUG] Auth header raw: '" << authHeaderStr << "'" << endl;
-
             if (!authHeaderStr.empty() && authHeaderStr[0] == ' ') {
                 authHeaderStr = authHeaderStr.substr(1);
             }
-
-            cerr << "[DEBUG] Auth header trimmed: '" << authHeaderStr << "'" << endl;
 
             User currentUser = extractAuthUser(authHeaderStr);
 
@@ -1823,59 +1784,31 @@ int main() {
                 fclose(debugFile);
             }
             
-            // Find the actual body by looking for header/body separator first
             size_t headerEnd = request.find("\r\n\r\n");
             if (headerEnd == string::npos) headerEnd = request.find("\n\n");
-            cerr << "[DEBUG] headerEnd: " << (headerEnd == string::npos ? "not found" : to_string(headerEnd)) << endl;
-            cerr << "[DEBUG] request length: " << request.length() << endl;
 
             string queryStr = "";
             if (headerEnd != string::npos) {
-                // Find { after the header/body separator
                 size_t bodyStart = request.find("{", headerEnd);
-                cerr << "[DEBUG] bodyStart: " << (bodyStart == string::npos ? "not found" : to_string(bodyStart)) << endl;
                 if (bodyStart != string::npos) {
                     size_t bodyEnd = request.rfind("}");
-                    cerr << "[DEBUG] bodyEnd: " << (bodyEnd == string::npos ? "not found" : to_string(bodyEnd)) << endl;
                     if (bodyEnd != string::npos && bodyEnd > bodyStart) {
                         string body = request.substr(bodyStart, bodyEnd - bodyStart + 1);
-                        cerr << "[DEBUG] Raw body: " << body << endl;
                         queryStr = extractQueryFromBody(body);
                         if (queryStr.empty()) {
-                            cerr << "[DEBUG] Query was empty, using raw body" << endl;
                             queryStr = body;
                         }
                     }
                 }
-            } else {
-                // Try finding { anywhere in request (might be HTTP/2 or other format)
-                cerr << "[DEBUG] No header/body separator found, trying alternate parsing" << endl;
-                size_t bodyStart = request.find("{\"query\"");
-                if (bodyStart == string::npos) bodyStart = request.find("{\"query\":");
-                if (bodyStart == string::npos) bodyStart = request.find("query");
-                if (bodyStart != string::npos) {
-                    size_t bodyEnd = request.rfind("}");
-                    if (bodyEnd != string::npos && bodyEnd > bodyStart) {
-                        string body = request.substr(bodyStart, bodyEnd - bodyStart + 1);
-                        cerr << "[DEBUG] Alt raw body: " << body << endl;
-                        queryStr = extractQueryFromBody(body);
-                    }
-                }
             }
-            
+
             bool isMutation = (queryStr.find("mutation {") != string::npos || queryStr.find("mutation(") != string::npos);
-            
-            cerr << "[DEBUG] Extracted query: '" << queryStr << "'" << endl;
-            cerr << "[DEBUG] IsMutation: " << (isMutation ? "true" : "false") << endl;
-            
+
             string responseBody = handleRequest(queryStr, currentUser, isMutation);
-            cerr << "[DEBUG] Response body length: " << responseBody.length() << endl;
-            cerr << "[DEBUG] Response body: " << responseBody << endl;
 
             string response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nContent-Type: application/json\r\nContent-Length: " +
                 to_string(responseBody.length()) + "\r\nX-Content-Type-Options: nosniff\r\n\r\n" + responseBody;
-            ssize_t sent = send(clientSocket, response.c_str(), response.length(), 0);
-            cerr << "[DEBUG] Bytes sent: " << sent << " of " << response.length() << endl;
+            send(clientSocket, response.c_str(), response.length(), 0);
         } else if (request.find("OPTIONS") == 0) {
             string response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Length: 0\r\n\r\n";
             send(clientSocket, response.c_str(), response.length(), 0);
