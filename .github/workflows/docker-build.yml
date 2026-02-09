@@ -26,6 +26,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Set up Docker Compose
+        run: docker compose version || echo "Using docker compose plugin"
+
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
@@ -60,17 +63,17 @@ jobs:
         run: |
           echo "=== Docker Build Test ==="
           
-          echo "Building and starting services with docker-compose..."
-          docker-compose up -d --build
+          echo "Building and starting services with docker compose..."
+          docker compose up -d --build
           
           echo "Waiting for services to start..."
           sleep 15
           
           echo "=== Container Status ==="
-          docker-compose ps
+          docker compose ps
           
           echo "=== Container Logs ==="
-          docker-compose logs --tail 30 api
+          docker compose logs --tail 30 api
           
           echo "=== Running Full Test Suite ==="
           chmod +x test_api.sh
@@ -86,7 +89,7 @@ jobs:
           echo "=== Test Exit Code: $TEST_EXIT_CODE ==="
           
           echo "=== Cleanup ==="
-          docker-compose down 2>/dev/null || true
+          docker compose down 2>/dev/null || true
           
           if [ $TEST_EXIT_CODE -eq 0 ]; then
             echo ""
