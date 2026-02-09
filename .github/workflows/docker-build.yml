@@ -101,16 +101,16 @@ jobs:
             exit 1
           fi
 
-      - name: Initialize Neon Database
+      - name: Initialize Neon Database (Docker Test)
         run: |
-          echo "=== Initializing Neon Database ==="
+          echo "=== Initializing Neon Database (Docker Test) ==="
           if [ -n "$DATABASE_URL" ]; then
             echo "Installing PostgreSQL client..."
             apt-get update && apt-get install -y postgresql-client
 
             echo "Running init scripts..."
-            PGPASSWORD="$DATABASE_URL" psql "$DATABASE_URL" -f scripts/init_database.sql
-            PGPASSWORD="$DATABASE_URL" psql "$DATABASE_URL" -f scripts/seed.sql
+            psql "$DATABASE_URL" -f scripts/init_database.sql
+            psql "$DATABASE_URL" -f scripts/seed.sql
             echo "✓ Database initialized successfully"
           else
             echo "DATABASE_URL not set - skipping database initialization"
@@ -133,5 +133,24 @@ jobs:
             fi
           else
             echo "Skipping Render deploy - secrets not configured"
+          fi
+        if: github.event_name != 'pull_request'
+
+      - name: Initialize Neon Database (Production)
+        run: |
+          echo "=== Initializing Neon Database (Production) ==="
+          if [ -n "$DATABASE_URL" ]; then
+            echo "Installing PostgreSQL client..."
+            apt-get update && apt-get install -y postgresql-client
+
+            echo "Waiting for Render deployment to complete..."
+            sleep 60
+
+            echo "Running init scripts on Neon..."
+            psql "$DATABASE_URL" -f scripts/init_database.sql
+            psql "$DATABASE_URL" -f scripts/seed.sql
+            echo "✓ Neon database initialized successfully"
+          else
+            echo "DATABASE_URL not set - skipping database initialization"
           fi
         if: github.event_name != 'pull_request'

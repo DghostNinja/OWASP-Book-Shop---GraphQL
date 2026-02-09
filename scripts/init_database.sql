@@ -1,8 +1,6 @@
 -- Initialize bookstore database schema
--- Note: Database must already exist (created by PostgreSQL Docker image)
+-- Note: Database is specified in connection string (DATABASE_URL)
 -- Run as postgres superuser or with appropriate privileges
-
-\c bookstore_db;
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
