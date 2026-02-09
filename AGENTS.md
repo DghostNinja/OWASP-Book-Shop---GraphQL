@@ -35,40 +35,52 @@ sudo -u postgres psql -f scripts/init_database.sql
 # Run full test suite (requires server running)
 ./test_api.sh
 
-# Create test file to avoid bash escaping issues
+# Test with custom API URL
+API_URL=http://localhost:4000/graphql ./test_api.sh
+
+# Test Docker container
+chmod +x test_api.sh
+API_URL=http://localhost:4001/graphql ./test_api.sh
+```
+
+### Test File Format (Avoid Bash Escaping)
+Always use files for JSON payloads to avoid bash escaping issues:
+
+```bash
+# Create test file
 cat > /tmp/test_login.json << 'EOF'
 {"query":"mutation { login(username: \"admin\", password: \"password123\") { success token } }"}
 EOF
 
-# Test login using file input (recommended - avoids bash escaping)
+# Use file input
 curl -X POST http://localhost:4000/graphql \
   -H 'Content-Type: application/json' \
   --data-binary @/tmp/test_login.json
-
-# Test registration
-cat > /tmp/test_register.json << 'EOF'
-{"query":"mutation { register(username: \"testuser\", firstName: \"Test\", lastName: \"User\", password: \"testpass123\") { success } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_register.json
-
-# Test SSRF
-cat > /tmp/test_ssrf.json << 'EOF'
-{"query":"query { _fetchExternalResource(url: \"http://example.com\") }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_ssrf.json
-
-# Test BOLA (user enumeration - no auth required!)
-cat > /tmp/test_bola.json << 'EOF'
-{"query":"query { _internalUserSearch(username: \"\") { username passwordHash } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_bola.json
 ```
+
+### Test Results
+The test script checks:
+1. ✓ Server health / GraphQL Playground
+2. ✓ User registration
+3. ✓ User login
+4. ✓ Books query (no auth)
+5. ✓ 'me' query (with auth)
+6. ✓ SSRF endpoint
+7. ✓ BOLA vulnerability (intentional)
+8. ✓ SQL Injection endpoint
+9. ✓ Admin endpoints (intentional - no auth)
+10. ✓ Complex nested queries
+11. ✓ GraphQL introspection
+12. ✓ Mass Assignment vulnerability
+13. ✓ IDOR vulnerabilities
+14. ✓ CORS headers
+
+**Exit Codes:**
+- `0` = All tests passed
+- `1` = Some tests failed
+
+### GitHub Actions
+The workflow (`.github/workflows/docker-build.yml`) runs the full test suite against the Docker container before pushing to Docker Hub and triggering Render deployment.
 
 ### Clean Up
 ```bash

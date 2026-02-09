@@ -72,28 +72,45 @@ jobs:
       - name: Test Docker image
         run: |
           echo "=== Docker Build Test ==="
-          echo "Starting container..."
           
+          echo "Starting container..."
           docker run -d -p 4001:4000 --name test-api ${{ env.DOCKER_IMAGE }}:latest
           
-          echo "Waiting 10 seconds..."
+          echo "Waiting for container to start..."
           sleep 10
           
           echo "=== Container Status ==="
           docker ps -a | grep test-api || echo "Container not found"
           
           echo "=== Container Logs ==="
-          docker logs --tail 30 test-api 2>&1 || true
+          docker logs --tail 50 test-api 2>&1 | head -50 || true
           
-          echo "=== Testing HTTP ==="
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -m 5 http://localhost:4001/ 2>/dev/null || echo "000")
-          echo "HTTP Response: $HTTP_CODE"
+          echo "=== Running Full Test Suite ==="
+          chmod +x test_api.sh
+          
+          # Test with Docker container
+          API_URL="http://localhost:4001/graphql" ./test_api.sh > /tmp/test_results.txt 2>&1
+          TEST_EXIT_CODE=$?
+          
+          echo "=== Test Results ==="
+          cat /tmp/test_results.txt
+          
+          echo ""
+          echo "=== Test Exit Code: $TEST_EXIT_CODE ==="
           
           echo "=== Cleanup ==="
           docker stop test-api 2>/dev/null || true
           docker rm test-api 2>/dev/null || true
           
-          echo "Test complete (PostgreSQL required for full functionality)"
+          if [ $TEST_EXIT_CODE -eq 0 ]; then
+            echo ""
+            echo "✓ ALL TESTS PASSED - Image is ready for deployment!"
+            exit 0
+          else
+            echo ""
+            echo "✗ TESTS FAILED - Review output above"
+            exit 1
+          fi
 
       - name: Trigger Render Deploy
         run: |
