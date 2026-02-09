@@ -1769,20 +1769,23 @@ int main() {
             
             User currentUser = extractAuthUser(authHeaderStr);
             
-            size_t bodyStart = request.find("{");
-            size_t bodyEnd = request.rfind("}");
+            // Find the actual body by looking for header/body separator first
+            size_t headerEnd = request.find("\r\n\r\n");
+            if (headerEnd == string::npos) headerEnd = request.find("\n\n");
             
             string queryStr = "";
-            if (bodyStart != string::npos && bodyEnd != string::npos && bodyEnd > bodyStart) {
-                string body = request.substr(bodyStart, bodyEnd - bodyStart + 1);
-                cerr << "[DEBUG] Raw body: " << body << endl;
-                
-                queryStr = extractQueryFromBody(body);
-                if (queryStr.empty()) {
-                    size_t firstBrace = body.find("{");
-                    size_t lastBrace = body.rfind("}");
-                    if (firstBrace != string::npos && lastBrace != string::npos && lastBrace > firstBrace) {
-                        queryStr = body.substr(firstBrace, lastBrace - firstBrace + 1);
+            if (headerEnd != string::npos) {
+                // Find { after the header/body separator
+                size_t bodyStart = request.find("{", headerEnd);
+                if (bodyStart != string::npos) {
+                    size_t bodyEnd = request.rfind("}");
+                    if (bodyEnd != string::npos && bodyEnd > bodyStart) {
+                        string body = request.substr(bodyStart, bodyEnd - bodyStart + 1);
+                        cerr << "[DEBUG] Raw body: " << body << endl;
+                        queryStr = extractQueryFromBody(body);
+                        if (queryStr.empty()) {
+                            queryStr = body;
+                        }
                     }
                 }
             }
