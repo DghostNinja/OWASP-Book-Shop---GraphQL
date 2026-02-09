@@ -240,43 +240,9 @@ User verifyJWT(const string& token) {
 bool connectDatabase() {
     string connStr = DB_CONN;
     if (connStr.find("://") != string::npos) {
-        size_t protocolEnd = connStr.find("://");
-        string rest = connStr.substr(protocolEnd + 3);
-
-        size_t atPos = rest.find("@");
-        string creds = rest.substr(0, atPos);
-        string hostDbParams = rest.substr(atPos + 1);
-
-        size_t colonPos = creds.find(":");
-        string user = creds.substr(0, colonPos);
-        string password = creds.substr(colonPos + 1);
-
-        size_t slashPos = hostDbParams.find("/");
-        string host = hostDbParams.substr(0, slashPos);
-        string dbAndParams = hostDbParams.substr(slashPos + 1);
-
-        size_t qmarkPos = dbAndParams.find("?");
-        string dbname = (qmarkPos != string::npos) ? dbAndParams.substr(0, qmarkPos) : dbAndParams;
-        string queryString = (qmarkPos != string::npos) ? dbAndParams.substr(qmarkPos + 1) : "";
-
-        connStr = "host=" + host + " user=" + user + " password=" + password + " dbname=" + dbname;
-
-        if (!queryString.empty()) {
-            string params;
-            size_t start = 0;
-            while (start < queryString.length()) {
-                size_t eqPos = queryString.find("=", start);
-                if (eqPos == string::npos) break;
-                string key = queryString.substr(start, eqPos - start);
-                size_t ampPos = queryString.find("&", eqPos + 1);
-                string value = (ampPos != string::npos) ? queryString.substr(eqPos + 1, ampPos - eqPos - 1) : queryString.substr(eqPos + 1);
-                params += " " + key + "=" + value;
-                start = (ampPos != string::npos) ? ampPos + 1 : queryString.length();
-            }
-            connStr += params;
-        }
-
-        cerr << "[DB] Parsed connection string: " << connStr << endl;
+        cerr << "[DB] Using URL connection string: " << connStr << endl;
+    } else {
+        cerr << "[DB] Using keyword connection string: " << connStr << endl;
     }
 
     dbConn = PQconnectdb(connStr.c_str());
