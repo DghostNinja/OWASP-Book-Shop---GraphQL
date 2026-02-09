@@ -217,18 +217,25 @@ string generateJWT(const User& user) {
 
 User verifyJWT(const string& token) {
     User user;
+    cerr << "[DEBUG] verifyJWT called with token length: " << token.length() << endl;
+    cerr << "[DEBUG] JWT_SECRET length: " << strlen(JWT_SECRET) << endl;
+
     jwt_t* jwt = nullptr;
-    
+
     int rc = jwt_decode(&jwt, token.c_str(), (unsigned char*)JWT_SECRET, strlen(JWT_SECRET));
+    cerr << "[DEBUG] jwt_decode returned: " << rc << endl;
     if (rc != 0) {
+        cerr << "[DEBUG] JWT verification failed with code: " << rc << endl;
         return user;
     }
-    
+
     user.id = jwt_get_grant(jwt, "sub");
     user.username = jwt_get_grant(jwt, "username");
     user.role = jwt_get_grant(jwt, "role");
     user.isActive = true;
-    
+
+    cerr << "[DEBUG] JWT decoded - id: " << user.id << ", username: " << user.username << ", role: " << user.role << endl;
+
     jwt_free(jwt);
     return user;
 }
@@ -666,6 +673,8 @@ string handleQuery(const string& query, const User& currentUser) {
     }
 
     if (query.find("__schema") != string::npos) {
+        cerr << "[DEBUG] Introspection handler triggered" << endl;
+        cerr << "[DEBUG] Query: " << query << endl;
         if (!firstField) response << ",";
         response << "\"__schema\":{";
         response << "\"queryType\":{";
@@ -1759,15 +1768,31 @@ int main() {
         if (isPostRequest) {
             string authHeaderStr = "";
             size_t authPos = request.find("Authorization:");
+            if (authPos == string::npos) authPos = request.find("authorization:");
             if (authPos != string::npos) {
                 size_t lineEnd = request.find("\r\n", authPos);
                 if (lineEnd == string::npos) lineEnd = request.find("\n", authPos);
                 if (lineEnd != string::npos) {
-                    authHeaderStr = request.substr(authPos, lineEnd - authPos);
+                    authHeaderStr = request.substr(authPos + 14, lineEnd - authPos - 14);
                 }
             }
-            
+
+            cerr << "[DEBUG] Auth header raw: '" << authHeaderStr << "'" << endl;
+
+            if (!authHeaderStr.empty() && authHeaderStr[0] == ' ') {
+                authHeaderStr = authHeaderStr.substr(1);
+            }
+
+            cerr << "[DEBUG] Auth header trimmed: '" << authHeaderStr << "'" << endl;
+
             User currentUser = extractAuthUser(authHeaderStr);
+
+            FILE* debugFile = fopen("/tmp/auth_debug.txt", "a");
+            if (debugFile) {
+                fprintf(debugFile, "Auth header: [%s]\n", authHeaderStr.c_str());
+                fprintf(debugFile, "Current user id: [%s]\n", currentUser.id.c_str());
+                fclose(debugFile);
+            }
             
             // Find the actual body by looking for header/body separator first
             size_t headerEnd = request.find("\r\n\r\n");
@@ -1790,14 +1815,14 @@ int main() {
                 }
             }
             
-            bool isMutation = (queryStr.find("mutation") != string::npos);
+            bool isMutation = (queryStr.find("mutation {") != string::npos || queryStr.find("mutation(") != string::npos);
             
             cerr << "[DEBUG] Extracted query: '" << queryStr << "'" << endl;
             cerr << "[DEBUG] IsMutation: " << (isMutation ? "true" : "false") << endl;
             
             string responseBody = handleRequest(queryStr, currentUser, isMutation);
             
-            string response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + 
+            string response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nContent-Type: application/json\r\nContent-Length: " +
                 to_string(responseBody.length()) + "\r\n\r\n" + responseBody;
             send(clientSocket, response.c_str(), response.length(), 0);
         } else if (request.find("OPTIONS") == 0) {
