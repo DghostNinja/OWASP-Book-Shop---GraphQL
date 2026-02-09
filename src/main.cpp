@@ -257,10 +257,26 @@ bool connectDatabase() {
 
         size_t qmarkPos = dbAndParams.find("?");
         string dbname = (qmarkPos != string::npos) ? dbAndParams.substr(0, qmarkPos) : dbAndParams;
-        string extraParams = (qmarkPos != string::npos) ? dbAndParams.substr(qmarkPos) : "";
+        string queryString = (qmarkPos != string::npos) ? dbAndParams.substr(qmarkPos + 1) : "";
 
-        connStr = "host=" + host + " user=" + user + " password=" + password + " dbname=" + dbname + " " + extraParams;
-        cerr << "[DB] Parsed connection string: host=" << host << " user=" << user << " dbname=" << dbname << endl;
+        connStr = "host=" + host + " user=" + user + " password=" + password + " dbname=" + dbname;
+
+        if (!queryString.empty()) {
+            string params;
+            size_t start = 0;
+            while (start < queryString.length()) {
+                size_t eqPos = queryString.find("=", start);
+                if (eqPos == string::npos) break;
+                string key = queryString.substr(start, eqPos - start);
+                size_t ampPos = queryString.find("&", eqPos + 1);
+                string value = (ampPos != string::npos) ? queryString.substr(eqPos + 1, ampPos - eqPos - 1) : queryString.substr(eqPos + 1);
+                params += " " + key + "=" + value;
+                start = (ampPos != string::npos) ? ampPos + 1 : queryString.length();
+            }
+            connStr += params;
+        }
+
+        cerr << "[DB] Parsed connection string: " << connStr << endl;
     }
 
     dbConn = PQconnectdb(connStr.c_str());
