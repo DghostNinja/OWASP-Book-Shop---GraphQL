@@ -594,11 +594,22 @@ string webhookToJson(const Webhook& webhook) {
 }
 
 string extractValue(const string& query, const string& key) {
-    string pattern = key + "\\s*:\\s*\\\"([^\\\"]+)\\\"";
+    string pattern = key + "\\s*:\\s*\\\\?\"((?:[^\"\\\\]|\\\\.)*)\\\\?\"";
     regex re(pattern);
     smatch match;
     if (regex_search(query, match, re) && match.size() > 1) {
-        return match[1].str();
+        string result = match[1].str();
+        string unescaped;
+        for (size_t i = 0; i < result.length(); i++) {
+            if (result[i] == '\\' && i + 1 < result.length()) {
+                if (result[i + 1] == '"') { unescaped += '"'; i++; }
+                else if (result[i + 1] == 'n') { unescaped += '\n'; i++; }
+                else if (result[i + 1] == 't') { unescaped += '\t'; i++; }
+                else if (result[i + 1] == '\\') { unescaped += '\\'; i++; }
+                else { unescaped += result[i]; }
+            } else { unescaped += result[i]; }
+        }
+        return unescaped;
     }
     return "";
 }
