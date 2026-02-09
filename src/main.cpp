@@ -253,17 +253,14 @@ bool connectDatabase() {
 
         size_t slashPos = hostDbParams.find("/");
         string host = hostDbParams.substr(0, slashPos);
-        string dbParams = hostDbParams.substr(slashPos + 1);
+        string dbAndParams = hostDbParams.substr(slashPos + 1);
 
-        size_t paramPos = dbParams.find("?");
-        string dbname = dbParams;
-        string extraParams = "";
-        if (paramPos != string::npos) {
-            dbname = dbParams.substr(0, paramPos);
-            extraParams = dbParams.substr(paramPos);
-        }
+        size_t qmarkPos = dbAndParams.find("?");
+        string dbname = (qmarkPos != string::npos) ? dbAndParams.substr(0, qmarkPos) : dbAndParams;
+        string extraParams = (qmarkPos != string::npos) ? dbAndParams.substr(qmarkPos) : "";
 
-        connStr = "host=" + host + " user=" + user + " password=" + password + " dbname=" + dbname + extraParams;
+        connStr = "host=" + host + " user=" + user + " password=" + password + " dbname=" + dbname + " " + extraParams;
+        cerr << "[DB] Parsed connection string: host=" << host << " user=" << user << " dbname=" << dbname << endl;
     }
 
     dbConn = PQconnectdb(connStr.c_str());
