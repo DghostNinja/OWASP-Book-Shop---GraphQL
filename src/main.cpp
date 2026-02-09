@@ -598,30 +598,49 @@ string extractValue(const string& query, const string& key) {
     size_t keyPos = query.find(searchKey);
     if (keyPos == string::npos) return "";
     
-    size_t valueStart = query.find("\"", keyPos + searchKey.length());
-    if (valueStart == string::npos) return "";
+    size_t searchStart = keyPos + searchKey.length();
     
-    valueStart++; // move past opening quote
+    // Skip whitespace
+    while (searchStart < query.length() && (query[searchStart] == ' ' || query[searchStart] == '\t')) {
+        searchStart++;
+    }
+    
+    if (searchStart >= query.length()) return "";
+    
+    // Skip opening quote (may be escaped with backslash like \")
+    if (query[searchStart] == '"') {
+        searchStart++;
+    } else if (query[searchStart] == '\\' && searchStart + 1 < query.length() && query[searchStart + 1] == '"') {
+        // Skip escaped quote: \"
+        searchStart += 2;
+    }
     
     string value;
     bool escaped = false;
-    for (size_t i = valueStart; i < query.length(); i++) {
+    
+    for (size_t i = searchStart; i < query.length(); i++) {
         char c = query[i];
+        
         if (escaped) {
-            if (c == 'n') value += '\n';
-            else if (c == 't') value += '\t';
-            else if (c == '\\') value += '\\';
-            else value += c;
+            // If we're escaped and see a quote, it's an escaped quote - don't include it
+            if (c != '"') {
+                value += c;
+            }
             escaped = false;
         } else if (c == '\\') {
             escaped = true;
         } else if (c == '"') {
+            // End of string
+            return value;
+        } else if (c == ' ' || c == ',' || c == ')' || c == '{' || c == '}') {
+            // End of value (unquoted)
             return value;
         } else {
             value += c;
         }
     }
-    return "";
+    
+    return value;
 }
 
 string extractIntValue(const string& query, const string& key) {
