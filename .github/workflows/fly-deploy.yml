@@ -1,4 +1,4 @@
-name: Deploy to Fly.io
+name: Build, Test & Deploy to Fly.io
 
 on:
   push:
@@ -11,12 +11,67 @@ on:
       - main
 
 env:
+  DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/graphql
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
 jobs:
-  deploy:
-    name: Deploy app
+  build-and-test:
+    name: Build & Test Docker Image
     runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Docker Compose
+        run: docker compose version || echo "Using docker compose plugin"
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          load: true
+
+      - name: Test with Docker Compose
+        run: |
+          echo "=== Docker Build Test ==="
+          docker compose up -d --build
+          sleep 15
+          docker compose ps
+          docker compose logs --tail 30 api
+
+      - name: Run Test Suite
+        run: |
+          chmod +x test_api.sh
+          API_URL="http://localhost:4000/graphql" ./test_api.sh
+        continue-on-error: false
+
+      - name: Push to Docker Hub
+        run: |
+          docker tag ${{ env.DOCKER_IMAGE }}:${{ github.sha }} ${{ env.DOCKER_IMAGE }}:latest
+          docker push ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
+          docker push ${{ env.DOCKER_IMAGE }}:latest
+        if: github.event_name != 'pull_request'
+
+      - name: Cleanup
+        run: docker compose down 2>/dev/null || true
+
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name != 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,27 +80,7 @@ jobs:
         run: |
           curl -L https://fly.io/install.sh | sh
           echo "$HOME/.fly/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.fly/bin:$PATH"
-          flyctl version
-
-      - name: Set up Fly.io
-        run: |
-          export PATH="$HOME/.fly/bin:$PATH"
-
-          # Create app if it doesn't exist
-          fly apps list | grep owasp-bookshop || fly launch --name owasp-bookshop --no-deploy --region iad --copy-config
 
       - name: Deploy to Fly.io
         run: |
-          export PATH="$HOME/.fly/bin:$PATH"
-          fly deploy
-
-      - name: Initialize Neon Database
-        run: |
-          if [ -n "$DATABASE_URL" ]; then
-            apt-get update && apt-get install -y postgresql-client
-            psql "$DATABASE_URL" -f scripts/init_database.sql
-            psql "$DATABASE_URL" -f scripts/seed.sql
-            echo "✓ Neon database initialized"
-          fi
-        if: github.event_name != 'pull_request'
+          fly deploy --image ${{ env.DOCKER_IMAGE }}:${{ github.sha }}

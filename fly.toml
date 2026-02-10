@@ -2,6 +2,7 @@ app = "owasp-bookshop"
 primary_region = "iad"
 
 [build]
+image = "ipsalmy/graphql:latest"
 
 [http_service]
   internal_port = 4000
