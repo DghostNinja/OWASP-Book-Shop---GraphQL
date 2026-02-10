@@ -86,7 +86,7 @@ jobs:
           # Create app if it doesn't exist
           if ! fly apps list | grep -q owasp-bookshop; then
             echo "Creating Fly.io app..."
-            fly apps create --name owasp-bookshop --org personal --region iad
+            fly apps create --name owasp-bookshop --org personal
           fi
 
           # Deploy using Docker image from Docker Hub

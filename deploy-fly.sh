@@ -18,7 +18,7 @@ fi
 
 # Launch app (creates if not exists)
 echo "Launching app..."
-fly launch --no-deploy --name owasp-bookshop --region iad
+fly launch --no-deploy --name owasp-bookshop
 
 # Set secrets
 echo "Setting secrets..."
