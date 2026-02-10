@@ -1,15 +1,10 @@
-FROM ubuntu:22.04
+FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     g++ \
-    make \
-    cmake \
     libpq-dev \
-    libssl-dev \
-    libjwt-dev \
-    libcurl4-openssl-dev \
-    postgresql-client \
-    ca-certificates \
+    libssl3 \
+    libcurl4 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
