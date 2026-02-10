@@ -83,4 +83,11 @@ jobs:
 
       - name: Deploy to Fly.io
         run: |
+          # Create app if it doesn't exist
+          if ! fly apps list | grep -q owasp-bookshop; then
+            echo "Creating Fly.io app..."
+            fly apps create --name owasp-bookshop --org personal --region iad
+          fi
+
+          # Deploy using Docker image from Docker Hub
           fly deploy --image ${{ env.DOCKER_IMAGE }}:${{ github.sha }}
