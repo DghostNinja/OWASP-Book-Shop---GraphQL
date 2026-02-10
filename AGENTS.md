@@ -472,3 +472,70 @@ Symptoms to watch for:
 - Server receives `\\"` in the raw body
 
 Fix: Use the extractValue() implementation above.
+
+---
+
+## Fly.io Deployment
+
+### Why Fly.io?
+- Faster cold starts than Render
+- Better performance for low-traffic apps
+- Generous free tier
+- Docker-based deployments
+
+### Initial Setup
+
+```bash
+# Install flyctl
+curl -L https://fly.io/install.sh | sh
+export FLYCTL_INSTALL="$HOME/.fly"
+export PATH="$FLYCTL_INSTALL/bin:$PATH"
+
+# Authenticate
+flyctl auth login
+
+# Launch app (creates fly.toml and deploys)
+./deploy-fly.sh
+```
+
+### Manual Deployment
+```bash
+# Deploy to Fly.io
+fly deploy
+
+# Check status
+fly status
+
+# View logs
+fly logs
+
+# Open app
+fly open
+```
+
+### Environment Variables
+Set these in Fly.io dashboard or via CLI:
+- `DATABASE_URL`: Neon PostgreSQL connection string
+- `JWT_SECRET`: JWT signing secret
+
+### Scale Down (Free Tier)
+```bash
+# Scale to 0 machines when not in use (saves credits)
+fly scale count 0
+
+# Scale back up
+fly scale count 1
+```
+
+### Troubleshooting
+```bash
+# Check deployed machines
+fly machine list
+
+# Restart a machine
+fly machine restart <machine-id>
+
+# Check connection to database
+fly ssh console
+psql "$DATABASE_URL" -c "SELECT 1"
+```

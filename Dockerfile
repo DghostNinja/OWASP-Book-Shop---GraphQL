@@ -1,6 +1,5 @@
 FROM ubuntu:22.04
 
-# Install build dependencies and PostgreSQL client
 RUN apt-get update && apt-get install -y \
     g++ \
     make \
@@ -10,19 +9,15 @@ RUN apt-get update && apt-get install -y \
     libjwt-dev \
     libcurl4-openssl-dev \
     postgresql-client \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy source files
 COPY src/main.cpp src/main.cpp
 
-# Compile the server
 RUN g++ -std=c++17 -pthread -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
 
-# Expose port
 EXPOSE 4000
 
-# Run server
-CMD ./bookstore-server
+CMD ["./bookstore-server"]

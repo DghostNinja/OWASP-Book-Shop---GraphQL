@@ -1,0 +1,50 @@
+name: Deploy to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+jobs:
+  deploy:
+    name: Deploy app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Build and deploy
+        run: |
+          echo "=== Deploying to Fly.io ==="
+
+          # Deploy the app (creates if not exists)
+          fly deploy --remote-only
+
+          echo "=== Deployment initiated ==="
+
+      - name: Initialize Neon Database
+        run: |
+          echo "=== Initializing Neon Database ==="
+          if [ -n "$DATABASE_URL" ]; then
+            echo "Installing PostgreSQL client..."
+            apt-get update && apt-get install -y postgresql-client
+
+            echo "Running init scripts on Neon..."
+            psql "$DATABASE_URL" -f scripts/init_database.sql
+            psql "$DATABASE_URL" -f scripts/seed.sql
+            echo "✓ Neon database initialized"
+          else
+            echo "DATABASE_URL not set"
+          fi
+        if: github.event_name != 'pull_request'
