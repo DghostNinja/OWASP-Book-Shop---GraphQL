@@ -124,6 +124,70 @@ bool usersLoaded = false;
 bool booksLoaded = false;
 bool cachesLoading = false;
 
+#define RATE_LIMIT_WINDOW_SECONDS 60
+#define RATE_LIMIT_MAX_REQUESTS 100
+#define RATE_LIMIT_BLOCK_DURATION 300
+
+struct RateLimitEntry {
+    int requestCount;
+    time_t windowStart;
+    time_t blockedUntil;
+};
+
+map<string, RateLimitEntry> rateLimitCache;
+pthread_mutex_t rateLimitMutex = PTHREAD_MUTEX_INITIALIZER;
+
+void* rateLimitCleanup(void* arg) {
+    while (true) {
+        sleep(60);
+        time_t now = time(nullptr);
+        pthread_mutex_lock(&rateLimitMutex);
+        for (auto it = rateLimitCache.begin(); it != rateLimitCache.end(); ) {
+            if (it->second.blockedUntil > 0 && it->second.blockedUntil < now) {
+                it = rateLimitCache.erase(it);
+            } else if (it->second.windowStart < now - RATE_LIMIT_WINDOW_SECONDS * 2 && it->second.blockedUntil == 0) {
+                it = rateLimitCache.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        pthread_mutex_unlock(&rateLimitMutex);
+    }
+    return nullptr;
+}
+
+bool checkRateLimit(const string& clientIP, string& retryAfter) {
+    time_t now = time(nullptr);
+    pthread_mutex_lock(&rateLimitMutex);
+
+    RateLimitEntry& entry = rateLimitCache[clientIP];
+
+    if (entry.blockedUntil > now) {
+        int retrySecs = (int)(entry.blockedUntil - now);
+        retryAfter = to_string(retrySecs);
+        pthread_mutex_unlock(&rateLimitMutex);
+        return false;
+    }
+
+    if (entry.windowStart < now - RATE_LIMIT_WINDOW_SECONDS) {
+        entry.requestCount = 0;
+        entry.windowStart = now;
+    }
+
+    entry.requestCount++;
+
+    if (entry.requestCount > RATE_LIMIT_MAX_REQUESTS) {
+        entry.blockedUntil = now + RATE_LIMIT_BLOCK_DURATION;
+        retryAfter = to_string(RATE_LIMIT_BLOCK_DURATION);
+        cerr << "[RATELIMIT] Blocked IP: " << clientIP << " (exceeded " << RATE_LIMIT_MAX_REQUESTS << " requests/min)" << endl;
+        pthread_mutex_unlock(&rateLimitMutex);
+        return false;
+    }
+
+    pthread_mutex_unlock(&rateLimitMutex);
+    return true;
+}
+
 void loadAllCaches();
 
 string extractJsonString(const string& body, size_t startPos) {
@@ -1501,7 +1565,7 @@ string generatePlaygroundHTML() {
            "<html>\n"
            "<head>\n"
            "    <meta charset=\"utf-8\"/>\n"
-           "    <title>GraphQL Playground - Vulnerable Bookstore API</title>\n"
+           "    <title>GraphQL Playground - OWASP Book Shop API</title>\n"
            "    <style>\n"
            "        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #1a1a1a; color: #f0f0f0; }\n"
            "        .warning { background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin: 20px 0; border-radius: 4px; color: #333; }\n"
@@ -1721,6 +1785,10 @@ int main() {
     pthread_t keepalive_id;
     pthread_create(&keepalive_id, NULL, keepAliveThread, NULL);
     pthread_detach(keepalive_id);
+
+    pthread_t ratelimit_id;
+    pthread_create(&ratelimit_id, NULL, rateLimitCleanup, NULL);
+    pthread_detach(ratelimit_id);
     
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {
@@ -1798,6 +1866,20 @@ int main() {
         }
         
         if (isPostRequest) {
+            char clientIP[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &clientAddr.sin_addr, clientIP, INET_ADDRSTRLEN);
+            string clientIPStr(clientIP);
+
+            string retryAfter;
+            if (!checkRateLimit(clientIPStr, retryAfter)) {
+                cerr << "[RATELIMIT] Rate limit exceeded for IP: " << clientIPStr << endl;
+                string responseBody = "{\"errors\":[{\"message\":\"Rate limit exceeded. Try again in " + retryAfter + " seconds.\"}]}";
+                string response = "HTTP/1.1 429 Too Many Requests\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nRetry-After: " + retryAfter + "\r\nContent-Length: " + to_string(responseBody.length()) + "\r\n\r\n" + responseBody;
+                send(clientSocket, response.c_str(), response.length(), 0);
+                close(clientSocket);
+                continue;
+            }
+
             cerr << "[REQUEST] POST /graphql received, buffer size: " << bytesReceived << endl;
 
             string authHeaderStr = "";
