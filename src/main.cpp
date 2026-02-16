@@ -1065,7 +1065,13 @@ string handleQuery(const string& query, const User& currentUser) {
         response << "{\"name\":\"_searchAdvanced\"},";
         response << "{\"name\":\"_adminStats\"},";
         response << "{\"name\":\"_adminAllOrders\"},";
-        response << "{\"name\":\"_adminAllPayments\"}";
+        response << "{\"name\":\"_adminAllPayments\"},";
+        response << "{\"name\":\"_batchQuery\"},";
+        response << "{\"name\":\"_processXML\"},";
+        response << "{\"name\":\"_applyCouponRace\"},";
+        response << "{\"name\":\"_jwtAlgorithmConfusion\"},";
+        response << "{\"name\":\"_cachePoison\"},";
+        response << "{\"name\":\"_deepRecursion\"}";
         response << "]},";
         response << "\"mutationType\":{";
         response << "\"name\":\"Mutation\",";
@@ -1335,6 +1341,74 @@ string handleQuery(const string& query, const User& currentUser) {
         response << "]";
         firstField = false;
         PQclear(res);
+    }
+
+    if (query.find("_batchQuery") != string::npos) {
+        if (!firstField) response << ",";
+        response << "\"_batchQuery\":{";
+        response << "\"bypassed\":true,";
+        response << "\"rateLimit\":false,";
+        response << "\"message\":\"Batch queries bypass standard rate limiting - use multiple operations in single request\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_processXML") != string::npos) {
+        string xmlData = extractValue(query, "xml");
+        if (!firstField) response << ",";
+        response << "\"_processXML\":{";
+        response << "\"parsed\":true,";
+        response << "\"entities\":[";
+        if (xmlData.find("<!ENTITY") != string::npos || xmlData.find("SYSTEM") != string::npos) {
+            response << "\"xxe_detected\":true";
+        } else {
+            response << "\"data\":\"processed\"";
+        }
+        response << "]";
+        response << ",\"warning\":\"XML entities processed without validation\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_applyCouponRace") != string::npos) {
+        string couponCode = extractValue(query, "code");
+        if (!firstField) response << ",";
+        response << "\"_applyCouponRace\":{";
+        response << "\"success\":true,";
+        response << "\"discount\":25,";
+        response << "\"message\":\"Coupon applied - race condition possible with concurrent requests\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_jwtAlgorithmConfusion") != string::npos) {
+        if (!firstField) response << ",";
+        response << "\"_jwtAlgorithmConfusion\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"alg\":\"HS256\",";
+        response << "\"attack\":\"Verify token with algorithm set to 'none' or use public key as HMAC secret\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_cachePoison") != string::npos) {
+        if (!firstField) response << ",";
+        response << "\"_cachePoison\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"header\":\"X-Forwarded-Host\",";
+        response << "\"impact\":\"Cache can be poisoned via HTTP headers - inject malicious content\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_deepRecursion") != string::npos) {
+        if (!firstField) response << ",";
+        response << "\"_deepRecursion\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"maxDepth\":\"unlimited\",";
+        response << "\"attack\":\"Craft deeply nested queries to cause stack overflow or memory exhaustion\"";
+        response << "}";
+        firstField = false;
     }
 
     if (query.find("_searchAdvanced") != string::npos) {
@@ -2834,7 +2908,6 @@ string generateLandingHTML() {
                 <a href="#" class="sidebar-item" onclick="showSection('queries')">Queries</a>
                 <a href="#" class="sidebar-item" onclick="showSection('mutations')">Mutations</a>
                 <a href="#" class="sidebar-item" onclick="showSection('vulnerabilities')">Vulnerabilities</a>
-                <a href="#" class="sidebar-item" onclick="showSection('testing')">Testing Examples</a>
             </div>
         </div>
 
@@ -2965,7 +3038,7 @@ string generateLandingHTML() {
                 <span class="code-comment"># Create order</span> <span class="code-keyword">mutation</span> { createOrder { success orderId } }<br>
                 <span class="code-comment"># View orders</span> <span class="code-keyword">query</span> { orders { id orderNumber status } }<br>
                 <span class="code-comment"># SQL Injection</span> <span class="code-keyword">query</span> { _searchAdvanced(query:"' OR 1=1--") { id title } }<br>
-                <span class="code-comment"># BOLA</span> <span class="code-keyword">query</span> { _internalUserSearch(username:"admin") { id role } }
+                <span class="code-comment"># User Search</span> <span class="code-keyword">query</span> { _internalUserSearch(username:"admin") { id role } }
                 </code>
                 </div>
             </div>
@@ -3007,7 +3080,7 @@ string generateLandingHTML() {
                 <div class="endpoint-card" onclick="setQuery(7)">
                     <div class="endpoint-header"><span class="endpoint-method method-query">Query</span><span class="auth-badge auth-optional">No Auth</span></div>
                     <div class="endpoint-name">_internalUserSearch</div>
-                    <div class="endpoint-desc">BOLA vulnerability</div>
+                    <div class="endpoint-desc">Search any user by username</div>
                 </div>
                 <div class="endpoint-card" onclick="setQuery(16)">
                     <div class="endpoint-header"><span class="endpoint-method method-query">Query</span><span class="auth-badge auth-optional">No Auth</span></div>
@@ -3301,7 +3374,7 @@ Authorization: Bearer <your-jwt-token></pre>
                         <div class="endpoint-card">
                             <div class="endpoint-header"><span class="endpoint-method method-query">Query</span><span class="auth-badge auth-optional">No Auth</span></div>
                             <div class="endpoint-name">_searchAdvanced</div>
-                            <div class="endpoint-desc"><strong>SQL Injection</strong> - Vulnerable advanced search</div>
+                            <div class="endpoint-desc">Advanced search</div>
                             <div class="code-block" style="margin-top: 8px; font-size: 0.7rem;">
                                 <button class="copy-button" onclick="copyToClipboard('query-sqli')">Copy</button>
                                 <code id="query-sqli">{ _searchAdvanced(query: "1 OR 1=1") { id title } }</code>
@@ -3310,7 +3383,7 @@ Authorization: Bearer <your-jwt-token></pre>
                         <div class="endpoint-card">
                             <div class="endpoint-header"><span class="endpoint-method method-query">Query</span><span class="auth-badge auth-optional">No Auth</span></div>
                             <div class="endpoint-name">_internalUserSearch</div>
-                            <div class="endpoint-desc"><strong>BOLA</strong> - Search any user by username</div>
+                            <div class="endpoint-desc">Search any user by username</div>
                             <div class="code-block" style="margin-top: 8px; font-size: 0.7rem;">
                                 <button class="copy-button" onclick="copyToClipboard('query-bola')">Copy</button>
                                 <code id="query-bola">{ _internalUserSearch(username: "a") { id role } }</code>
@@ -3335,7 +3408,7 @@ Authorization: Bearer <your-jwt-token></pre>
                         <div class="endpoint-card">
                             <div class="endpoint-header"><span class="endpoint-method method-mutation">Mutation</span><span class="auth-badge auth-required">Auth</span></div>
                             <div class="endpoint-name">updateProfile</div>
-                            <div class="endpoint-desc"><strong>Mass Assignment</strong> - Update any profile field</div>
+                            <div class="endpoint-desc">Update user profile</div>
                             <div class="code-block" style="margin-top: 8px; font-size: 0.7rem;">
                                 <button class="copy-button" onclick="copyToClipboard('mut-mass')">Copy</button>
                                 <code id="mut-mass">{ updateProfile(role: "admin") { role } }</code>
@@ -3355,79 +3428,25 @@ Authorization: Bearer <your-jwt-token></pre>
 
                 <!-- Vulnerabilities Section -->
                 <div id="vulnerabilities" class="doc-section glass-panel">
-                    <div class="section-title">Security Vulnerabilities</div>
+                    <div class="section-title">Security Considerations</div>
                     <div class="code-block">
-                        <h4 style="color: #f87171; margin-bottom: 10px;">Intentional Vulnerabilities for Learning</h4>
-                        <div style="color: #a3a3a3; line-height: 1.6;">
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">SQL Injection:</strong> <code>_searchAdvanced</code> query concatenates user input directly into SQL queries.</div>
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">BOLA:</strong> <code>_internalUserSearch</code> allows searching any user without authentication.</div>
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">IDOR:</strong> <code>cancelOrder</code> and <code>deleteReview</code> don't verify ownership.</div>
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">Mass Assignment:</strong> <code>updateProfile</code> accepts any field including role.</div>
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">SSRF:</strong> <code>_fetchExternalResource</code> and <code>testWebhook</code> make requests to arbitrary URLs.</div>
-                            <div style="margin-bottom: 12px;"><strong style="color: #fb923c;">No Auth:</strong> <code>_adminStats</code> and <code>_adminAllOrders</code> expose admin data without authentication.</div>
-                            <div><strong style="color: #fb923c;">Weak JWT:</strong> Default JWT secret is hardcoded and easily guessable.</div>
+                        <div style="color: #a3a3a3; line-height: 1.8;">
+                            <div style="margin-bottom: 15px;">This API contains various endpoints that may exhibit unexpected behavior under certain conditions:</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>Authentication</strong> - Response times may vary</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>Data Access</strong> - Some endpoints may allow broader data access</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>Input Processing</strong> - Various input fields are processed differently</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>Batch Operations</strong> - Multiple operations may behave unexpectedly</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>XML Handling</strong> - Some endpoints accept XML payloads</div>
+                            <div style="margin-bottom: 10px;">&#8226; <strong>Debug Endpoints</strong> - Internal information may be exposed</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Testing Examples Section -->
-                <div id="testing" class="doc-section glass-panel">
-                    <div class="section-title">Testing Examples</div>
-                    
-                    <div class="code-block-with-copy">
-                        <div class="code-header">
-                            <div class="code-title">SQL Injection Test</div>
-                            <button class="copy-button" onclick="copyToClipboard('test-sqli')">Copy</button>
-                        </div>
-                        <div class="code-block">
-                            <pre id="test-sqli">query {
-  _searchAdvanced(query: "1' UNION SELECT id, isbn, title, description, price, price, stock_quantity, rating_average, review_count, is_featured, is_bestseller, is_active FROM books WHERE '1'='1") {
-    id
-    title
-    price
-  }
-}</pre>
-                        </div>
-                    </div>
-
-                    <div class="code-block-with-copy">
-                        <div class="code-header">
-                            <div class="code-title">BOLA Test</div>
-                            <button class="copy-button" onclick="copyToClipboard('test-bola')">Copy</button>
-                        </div>
-                        <div class="code-block">
-                            <pre id="test-bola">query {
-  _internalUserSearch(username: "a") {
-    id
-    username
-    role
-    email
-    phone
-  }
-}</pre>
-                        </div>
-                    </div>
-
-                    <div class="code-block-with-copy">
-                        <div class="code-header">
-                            <div class="code-title">Privilege Escalation</div>
-                            <button class="copy-button" onclick="copyToClipboard('test-priv')">Copy</button>
-                        </div>
-                        <div class="code-block">
-                            <pre id="test-priv">mutation {
-  updateProfile(role: "admin") {
-    id
-    username
-    role
-  }
-}</pre>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
 
-    <footer>GraphQL Bookstore API - Security Learning Environment</footer>
+    <footer>GraphQL Bookstore API</footer>
 
     <script>
         var token = localStorage.getItem("token") || "";
