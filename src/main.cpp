@@ -3029,16 +3029,25 @@ string generateLandingHTML() {
             <div class="code-block">
                 <div class="code-scroller">
                 <code><span class="code-comment"># Query books (no auth)</span> <span class="code-keyword">query</span> { books(limit:5) { id title price } }<br>
-                <span class="code-comment"># Get book by ID</span> <span class="code-keyword">query</span> { book(id:1) { id title description } }<br>
+                <span class="code-comment"># Get book by ID</span> <span class="code-keyword">query</span> { book(id:1) { id title description author { firstName lastName } } }<br>
+                <span class="code-comment"># Search books</span> <span class="code-keyword">query</span> { books(search:"code") { id title price } }<br>
                 <span class="code-comment"># Login</span> <span class="code-keyword">mutation</span> { login(username:"admin", password:"password123") { success token } }<br>
                 <span class="code-comment"># Register</span> <span class="code-keyword">mutation</span> { register(username:"user", firstName:"John", lastName:"Doe", password:"pass") { success } }<br>
                 <span class="code-comment"># Get current user</span> <span class="code-keyword">query</span> { me { id username role firstName } }<br>
+                <span class="code-comment"># Update profile</span> <span class="code-keyword">mutation</span> { updateProfile(phone:"1234567890", city:"NYC") { success } }<br>
                 <span class="code-comment"># Add to cart</span> <span class="code-keyword">mutation</span> { addToCart(bookId:1, quantity:2) { success } }<br>
                 <span class="code-comment"># View cart</span> <span class="code-keyword">query</span> { cart { id items { bookId quantity } } }<br>
+                <span class="code-comment"># Remove from cart</span> <span class="code-keyword">mutation</span> { removeFromCart(bookId:1) { success } }<br>
                 <span class="code-comment"># Create order</span> <span class="code-keyword">mutation</span> { createOrder { success orderId } }<br>
-                <span class="code-comment"># View orders</span> <span class="code-keyword">query</span> { orders { id orderNumber status } }<br>
-                <span class="code-comment"># SQL Injection</span> <span class="code-keyword">query</span> { _searchAdvanced(query:"' OR 1=1--") { id title } }<br>
-                <span class="code-comment"># User Search</span> <span class="code-keyword">query</span> { _internalUserSearch(username:"admin") { id role } }
+                <span class="code-comment"># View orders</span> <span class="code-keyword">query</span> { orders { id orderNumber status totalAmount } }<br>
+                <span class="code-comment"># Cancel order</span> <span class="code-keyword">mutation</span> { cancelOrder(orderId:"xxx") { success } }<br>
+                <span class="code-comment"># Create review</span> <span class="code-keyword">mutation</span> { createReview(bookId:1, rating:5, comment:"Great!") { success } }<br>
+                <span class="code-comment"># View reviews</span> <span class="code-keyword">query</span> { bookReviews(bookId:1) { id rating comment } }<br>
+                <span class="code-comment"># Delete review</span> <span class="code-keyword">mutation</span> { deleteReview(reviewId:1) { success } }<br>
+                <span class="code-comment"># Register webhook</span> <span class="code-keyword">mutation</span> { registerWebhook(url:"https://example.com", events:"order.created") { success } }<br>
+                <span class="code-comment"># Test webhook</span> <span class="code-keyword">mutation</span> { testWebhook(webhookId:"xxx") { success } }<br>
+                <span class="code-comment"># Advanced search</span> <span class="code-keyword">query</span> { _searchAdvanced(query:"python") { id title price } }<br>
+                <span class="code-comment"># External resource</span> <span class="code-keyword">query</span> { _fetchExternalResource(url:"http://example.com") { content } }
                 </code>
                 </div>
             </div>
