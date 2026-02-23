@@ -21,7 +21,20 @@ echo "  Dependencies OK"
 
 echo ""
 echo "[2/5] Building server..."
-g++ -std=c++17 -pthread -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
+g++ -std=c++17 -pthread -o bookstore-server \
+    src/main.cpp \
+    src/utils.cpp \
+    src/user_manager.cpp \
+    src/book_manager.cpp \
+    src/order_manager.cpp \
+    src/extra_features.cpp \
+    src/db_manager.cpp \
+    src/network_manager.cpp \
+    src/graphql_handler.cpp \
+    src/html_generator.cpp \
+    src/rate_limiter.cpp \
+    src/payment_handler.cpp \
+    -lpq -ljwt -lcurl -lssl -lcrypto
 if [ $? -ne 0 ]; then
     echo "Build failed!"
     exit 1

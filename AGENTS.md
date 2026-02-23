@@ -47,41 +47,20 @@ g++ -std=c++17 -o bookstore-server src/main.cpp -lpq -ljwt -lcurl -lssl -lcrypto
 
 ## Testing
 
+### Test Scripts
+
+The project has two test scripts:
+
+1. **`test_api.sh`** - Security/vulnerability test suite (tests intentional vulnerabilities)
+2. **`flow.sh`** - User flow test suite (tests complete user journey)
+
+### Security Test Suite (test_api.sh)
+
 ```bash
 ./test_api.sh
 ```
 
-### Testing Commands
-
-```bash
-# Run full test suite (requires server running)
-./test_api.sh
-
-# Test with custom API URL
-API_URL=http://localhost:4000/graphql ./test_api.sh
-
-# Test Docker container
-chmod +x test_api.sh
-API_URL=http://localhost:4001/graphql ./test_api.sh
-```
-
-### Test File Format (Avoid Bash Escaping)
-Always use files for JSON payloads to avoid bash escaping issues:
-
-```bash
-# Create test file
-cat > /tmp/test_login.json << 'EOF'
-{"query":"mutation { login(username: \"admin\", password: \"password123\") { success token } }"}
-EOF
-
-# Use file input
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_login.json
-```
-
-### Test Results
-The test script checks:
+Tests for intentional vulnerabilities:
 1. ✓ Server health / GraphQL Playground
 2. ✓ User registration
 3. ✓ User login
@@ -97,9 +76,103 @@ The test script checks:
 13. ✓ IDOR vulnerabilities
 14. ✓ CORS headers
 
-**Exit Codes:**
-- `0` = All tests passed
-- `1` = Some tests failed
+### User Flow Test Suite (flow.sh)
+
+```bash
+./flow.sh
+```
+
+Tests the complete user journey through the API:
+
+| Step | Test | Description |
+|------|------|-------------|
+| 1 | Registration | Create new user account |
+| 2 | Login | Authenticate and get JWT token |
+| 3 | me query | Get current user profile |
+| 4 | Browse books | List all available books |
+| 5 | View book | Get single book details |
+| 6 | Add to cart | Add book to shopping cart |
+| 7 | View cart | Verify cart contents |
+| 8 | Remove from cart | Remove item from cart |
+| 9 | Add to cart again | Add item back |
+| 10 | Create review | Write book review |
+| 11 | View book reviews | See all reviews for a book |
+| 12 | View my reviews | See current user's reviews |
+| 13 | Register webhook | Create webhook subscription |
+| 14 | View webhooks | List user's webhooks |
+| 15 | Update profile | Change user profile info |
+| 16 | View orders (empty) | Check orders before purchase |
+| 17 | Purchase cart | Complete checkout with payment |
+| 18 | View orders (with purchase) | Verify order created |
+| 19 | Cancel order | Cancel the order |
+| 20 | Verify cancelled | Confirm order status changed |
+| 21 | Delete review | Remove review |
+| 22 | Cart empty after purchase | Verify cart cleared |
+| 23 | Search books | Test search functionality |
+| 24 | Introspection | GraphQL schema discovery |
+
+**Flow Test Output Example:**
+```
+==========================================
+  STEP 17: PURCHASE CART (PAYMENT)       
+==========================================
+Request: Purchase cart contents
+Response: {"data":{"purchaseCart":{"success":true,"orderId":"465e4d82..."...
+Order ID: 465e4d82-1949-4497-b9c4-8c8287ab970d
+Total Amount: $52.4192
+   PASS: Purchase successful (Order ID: 465e4d82...)
+```
+
+### Server Logging
+
+The server logs all operations to stderr. When running `./bookstore-server`, you'll see:
+
+```
+[REGISTER] username='testuser', firstName='Test', lastName='User'
+[LOGIN] username='testuser', password='testpass123'
+[QUERY] me (user: testuser)
+[QUERY] books(search: "", categoryId: 0)
+[QUERY] book(id: 1)
+[ADDTOCART] user='testuser', bookId=1, quantity=2
+[QUERY] cart (user: testuser)
+[REMOVEFROMCART] user='testuser', bookId=1
+[CREATEREVIEW] user='testuser', bookId=1, rating=5
+[QUERY] bookReviews(bookId: 1)
+[QUERY] myReviews (user: testuser)
+[REGISTERWEBHOOK] user='testuser', url='http://example.com/webhook'
+[QUERY] webhooks (user: testuser)
+[UPDATEPROFILE] user='testuser', firstName='Updated', lastName='User'
+[QUERY] orders (user: testuser)
+[PURCHASECART] user='testuser', cardNumber='4111111111111111'
+[PURCHASECART] order created, orderId='xxx', total=52.42
+[CANCELORDER] user='testuser', orderId='xxx'
+[CANCELORDER] order 'xxx' cancelled successfully
+[DELETEREVIEW] user='testuser', reviewId='22'
+[DELETEREVIEW] review '22' deleted successfully
+```
+
+**Log Format:**
+- `[QUERY]` - GraphQL query operations
+- `[MUTATION]` - GraphQL mutation operations (e.g., `[REGISTER]`, `[LOGIN]`)
+- Includes relevant parameters for debugging
+
+### Testing Commands
+
+```bash
+# Run security test suite (requires server running)
+./test_api.sh
+
+# Run user flow test suite (requires server running)
+./flow.sh
+
+# Test with custom API URL
+API_URL=http://localhost:4000/graphql ./test_api.sh
+API_URL=http://localhost:4000/graphql ./flow.sh
+
+# Test Docker container
+API_URL=http://localhost:4001/graphql ./test_api.sh
+API_URL=http://localhost:4001/graphql ./flow.sh
+```
 
 ### Clean Up
 ```bash
@@ -108,6 +181,21 @@ pkill -f bookstore-server
 
 # Or kill port 4000
 lsof -ti:4000 | xargs kill -9
+```
+
+### Test File Format (Avoid Bash Escaping)
+Always use files for JSON payloads to avoid bash escaping issues:
+
+```bash
+# Create test file
+cat > /tmp/test_login.json << 'EOF'
+{"query":"mutation { login(username: \"admin\", password: \"password123\") { success token } }"}
+EOF
+
+# Use file input
+curl -X POST http://localhost:4000/graphql \
+  -H 'Content-Type: application/json' \
+  --data-binary @/tmp/test_login.json
 ```
 
 ### Docker Deployment
@@ -227,16 +315,42 @@ PQclear(res);
 ```
 
 ### Debug Output
-- Use `cerr << "[DEBUG] message"` for debug logging
-- Debug messages should help track flow and identify issues
-- Example: `cerr << "[DEBUG] Insert successful" << endl;`
+- Use `cerr << "[OPERATION] message"` for operation logging
+- Log format: `[UPPERCASE_OPERATION] key='value', key2='value2'`
+- Examples:
+  - `cerr << "[REGISTER] username='" << username << "', firstName='" << firstName << "'" << endl;`
+  - `cerr << "[ADDTOCART] user='" << user << "', bookId=" << bookId << ", quantity=" << quantity << endl;`
+  - `cerr << "[QUERY] me (user: " << username << ")" << endl;`
+- All GraphQL queries and mutations should log their invocation
 
 ### Project Structure
 ```
 src/main.cpp           # Main server
+src/payment_handler.cpp  # Vulnbank checkout handling
+src/utils.h              # Shared utility function declarations (escapeJson, WriteCallback)
+src/utils.cpp            # Shared utility function definitions
+src/user_manager.h       # User struct and user-related function declarations
+src/user_manager.cpp     # User-related function definitions
+src/book_manager.h       # Book/Author structs and book/author-related function declarations
+src/book_manager.cpp     # Book/Author-related function definitions
+src/order_manager.h      # Cart/Order structs and cart/order-related function declarations
+src/order_manager.cpp    # Cart/Order-related function definitions
+src/extra_features.h     # Review/Webhook structs and related function declarations
+src/extra_features.cpp   # Review/Webhook-related function definitions
+src/graphql_handler.h    # GraphQL handler declarations
+src/graphql_handler.cpp  # GraphQL handler definitions
+src/db_manager.h         # Database manager declarations
+src/db_manager.cpp       # Database manager definitions
+src/network_manager.h    # Network manager declarations
+src/network_manager.cpp  # Network manager definitions
+src/html_generator.h     # HTML generator declarations
+src/html_generator.cpp   # HTML generator definitions
+src/rate_limiter.h       # Rate limiter declarations
+src/rate_limiter.cpp     # Rate limiter definitions
 scripts/init_database.sql  # Database schema and seed data
 build.sh              # Build script
-test_api.sh           # Integration tests
+test_api.sh           # Security/vulnerability test suite
+flow.sh               # User flow test suite
 docker-compose.yml     # Docker deployment
 Dockerfile            # Container image
 fly.toml              # Fly.io config
@@ -288,9 +402,9 @@ DB_CONN "dbname=bookstore_db user=bookstore_user password=bookstore_password hos
 
 ### Available Queries
 | Query | Description | Auth Required |
-|-------|-------------|---------------|\n| `me` | Get current authenticated user | Yes |\n| `books` | List all books with optional search and category filter | No |\n| `book(id)` | Get a specific book by ID | No |\n| `cart` | Get user\'s shopping cart | Yes |\n| `orders` | Get user\'s orders | Yes |\n| `bookReviews(bookId)` | Get reviews for a specific book | No |\n| `myReviews` | Get current user\'s reviews | Yes |\n| `webhooks` | Get user\'s registered webhooks | Yes |\n| `_internalUserSearch(username)` | Internal user search | No |\n| `_fetchExternalResource(url)` | Fetch external resource by URL | No |\n| `_searchAdvanced(query)` | Advanced search | No |\n| `_adminStats` | Admin statistics | No |\n| `_adminAllOrders` | All orders | No |\n| `_adminAllPayments` | All payment transactions | No |\n| `_proInventory` | Pro-level books collection | No |\n
+|-------|-------------|---------------|\n| `me` | Get current authenticated user | Yes |\n| `books` | List all books with optional search and category filter | No |\n| `book(id)` | Get a specific book by ID | No |\n| `cart` | Get user\'s shopping cart | Yes |\n| `orders` | Get user\'s orders | Yes |\n| `bookReviews(bookId)` | Get reviews for a specific book | No |\n| `myReviews` | Get current user\'s reviews | Yes |\n| `webhooks` | Get user\'s registered webhooks | Yes |\n| `_internalUserSearch(username)` | Internal user search | No |\n| `_fetchExternalResource(url)` | Fetch external resource by URL | No |\n| `_searchAdvanced(query)` | Advanced search | No |\n| `_adminStats` | Admin statistics | No |\n| `_adminAllOrders` | All orders | No |\n| `_adminAllPayments` | All payment transactions | No |\n| `_batchQuery` | GraphQL batch queries bypass rate limiting | No |\n| `processXMLData` | XXE vulnerability in XML processing | No |\n| `applyCoupon` | Race condition in coupon application | No |\n| `decodeJWT` | JWT algorithm confusion attack | No |\n| `manageCache` | HTTP cache poisoning via headers | No |\n| `handleRecursiveQuery` | Deep recursion attack via nested queries | No |\n
 ### Available Mutations
-| Mutation | Description | Auth Required |\n|----------|-------------|---------------|\n| `register(username, firstName, lastName, password)` | Register a new user | No |\n| `login(username, password)` | Login and get JWT token | No |\n| `updateProfile(...)` | Update user profile | Yes |\n| `addToCart(bookId, quantity)` | Add item to shopping cart | Yes |\n| `removeFromCart(bookId)` | Remove item from shopping cart | Yes |\n| `createOrder()` | Create order from cart | Yes |\n| `cancelOrder(orderId)` | Cancel an order | Yes |\n| `createReview(bookId, rating, comment)` | Create a review | Yes |\n| `deleteReview(reviewId)` | Delete a review | Yes |\n| `registerWebhook(url, events, secret)` | Register a webhook URL | Yes |\n| `testWebhook(webhookId)` | Test a webhook | Yes |\n
+| Mutation | Description | Auth Required |\n|----------|-------------|---------------|\n| `register(username, firstName, lastName, password)` | Register a new user | No |\n| `login(username, password)` | Login and get JWT token | No |\n| `updateProfile(...)` | Update user profile | Yes |\n| `addToCart(bookId, quantity)` | Add item to shopping cart | Yes |\n| `removeFromCart(bookId)` | Remove item from shopping cart | Yes |\n| `createOrder()` | Create order from cart | Yes |\n| `purchaseCart(cardNumber, expiry, cvv)` | Charge vulnbank card for cart items | Yes |\n| `cancelOrder(orderId)` | Cancel an order | Yes |\n| `createReview(bookId, rating, comment)` | Create a review | Yes |\n| `deleteReview(reviewId)` | Delete a review | Yes |\n| `registerWebhook(url, events, secret)` | Register a webhook URL | Yes |\n| `testWebhook(webhookId)` | Test a webhook | Yes |\n
 ### Recent Features Added
 - **Field Selection**: All queries now return only requested fields (e.g., `{ books { id title } }` returns only id and title)
 - **JWT Enhancements**: Tokens now include `iat` (issued at) and `exp` (expires in 6 hours)
@@ -298,6 +412,7 @@ DB_CONN "dbname=bookstore_db user=bookstore_user password=bookstore_password hos
 - **Authors Cache**: Authors are loaded at startup for nested queries
 - **Shopping Cart System**: Full cart functionality with add/remove items
 - **Order Management**: Create orders from cart, cancel orders
+- **Vulnbank Checkout**: `purchaseCart` mutation charges vulnbank.org cards and records payments
 - **Review System**: Create and delete reviews
 - **Webhook System**: Register webhooks with SSRF via testWebhook
 - **Admin Queries**: Stats, orders, and payments accessible without auth
@@ -352,297 +467,341 @@ The server contains additional advanced features for expert-level testing:
 6. **Debug Endpoints**: Timing information available for debugging
 
 ### Rate Limiting
-The server includes built-in rate limiting to prevent abuse:
-- **100 requests per 60 seconds** per IP address
-- **5-minute block** when limit exceeded
-- **Automatic cleanup** of old entries every 60 seconds
+357: The server includes built-in rate limiting to prevent abuse:
+358: - **100 requests per 60 seconds** per IP address
+359: - **5-minute block** when limit exceeded
+360: - **Automatic cleanup** of old entries every 60 seconds
+361: 
+362: Rate limit configuration constants in `src/main.cpp`:
+363: ```cpp
+364: #define RATE_LIMIT_WINDOW_SECONDS 60
+365: #define RATE_LIMIT_MAX_REQUESTS 100
+366: #define RATE_LIMIT_BLOCK_DURATION 300
+367: ```
+368: 
+369: ### API Documentation Page
+370: The landing page (`generateLandingHTML()` in `src/main.cpp`) provides:
+371: - Glass-morphism UI design with animated backgrounds
+372: - **API Link Bar**: Small glass icon with pulse animation and copyable link to `api.graphqlbook.store/graphql`
+373: - Query Runner panel for testing GraphQL queries
+374: - Login and Registration panels with JWT token storage
+375: - Quick examples and available endpoints grid
+376: - Click-to-load endpoint examples
+377: - Vulnerability chapter slideshow
+378: 
+379: **NOTE**: No built-in GraphQL Playground. Use external tools like:
+380: - https://studio.apollographql.com/
+381: - Postman, Insomnia, curl, Burp Suite
+382: 
+383: **API Link Bar Features:**
+384: - Glass-styled icon with green gradient and pulse animation effect
+385: - Clickable API URL that copies to clipboard when clicked
+386: - Shows "Copied!" feedback for 2 seconds after clicking
+387: - Styled with italic serif font for "Access the API at:" label
+388: 
+389: **Query Runner Features:**
+390: - Textarea for entering GraphQL queries
+391: - "Load Sample" button loads books query example
+392: - "Run Query" button executes query via XMLHttpRequest
+393: - Response displayed with JSON formatting
+394: - Optional username/password for authenticated requests
+395: 
+396: **Authentication Panel Features:**
+397: - Separate Login and Register panels
+398: - JWT tokens stored in localStorage
+399: - Tokens automatically used for authenticated requests
+400: 
+401: ### Fly.io Deployment
+402: App name: `graphql-bookstore`
+403: URL: https://graphql-bookstore.fly.dev
+404: 
+405: ### Testing New Features
+406: ```bash
+407: # Test cart with authentication
+408: cat > /tmp/test_login.json << 'EOF'
+409: {"query":"mutation { login(username: \"admin\", password: \"password123\") { token } }"}
+410: EOF
+411: TOKEN=$(curl -s -X POST http://localhost:4000/graphql \
+412:   -H 'Content-Type: application/json' \
+413:   -H "Authorization: Bearer $TOKEN" \
+414:   --data-binary @/tmp/test_login.json | grep -oP '"token":"[^"]+' | cut -d'"' -f4)
+415: 
+416: cat > /tmp/test_cart.json << 'EOF'
+417: {"query":"mutation { addToCart(bookId: 1, quantity: 2) { success message } }"}
+418: EOF
+419: curl -X POST http://localhost:4000/graphql \
+420:   -H 'Content-Type: application/json' \
+421:   -H "Authorization: Bearer $TOKEN" \
+422:   --data-binary @/tmp/test_cart.json
+423: 
+424: # Test order creation
+425: cat > /tmp/test_order.json << 'EOF'
+426: {"query":"mutation { createOrder { success orderId totalAmount } }"}
+427: EOF
+428: curl -X POST http://localhost:4000/graphql \
+429:   -H 'Content-Type: application/json' \
+430:   -H "Authorization: Bearer $TOKEN" \
+431:   --data-binary @/tmp/test_order.json
+432: 
+433: # Test admin queries (no auth required!)
+434: cat > /tmp/test_admin.json << 'EOF'
+435: {"query":"query { _adminStats { userCount bookCount totalRevenue } }"}
+436: EOF
+437: curl -X POST http://localhost:4000/graphql \
+438:   -H 'Content-Type: application/json' \
+439:   --data-binary @/tmp/test_admin.json
+440: 
+441: # Test SQL injection
+442: cat > /tmp/test_sql.json << 'EOF'
+443: {"query":"query { _searchAdvanced(query: \"1 OR 1=1\") { id title } }"}
+444: EOF
+445: curl -X POST http://localhost:4000/graphql \
+446:   -H 'Content-Type: application/json' \
+447:   --data-binary @/tmp/test_sql.json
+448: ```
+449: 
+450: ### SSRF URL Whitelist
+451: Allowed prefixes for `_fetchExternalResource`:
+452: - `http://example.com`
+453: - `http://httpbin.org`
+454: - `http://api.github.com`, `https://api.github.com`
+455: - `http://169.254.169.254` (cloud metadata)
+456: - `http://localhost:`, `http://127.0.0.1:`
+457: 
+458: ---
+459: 
+460: ## CRITICAL: GraphQL Query Parsing Guidelines
+461: 
+462: ### The Backslash-Escaped Quote Problem
+463: 
+464: When bash receives curl commands with `\"` inside single-quoted JSON, bash adds additional backslashes. For example:
+465: 
+466: ```bash
+467: # What you TYPE:
+468: -d '{"query":"mutation { login(username: \"admin\", password: \"password123\") { success } }"}'
+469: 
+470: # What the SERVER receives:
+471: {"query":"mutation { login(username: \\"admin\\", password: \\"password123\\") { success } }"}
+472: ```
+473: 
+474: The `\"` becomes `\\"` - the backslash is LITERAL in the string.
+475: 
+476: ### Correct extractValue() Implementation
+477: 
+478: This is the CORRECT implementation that handles escaped quotes:
+479: 
+480: ```cpp
+481: string extractValue(const string& query, const string& key) {
+482:     string searchKey = key + ":";
+483:     size_t keyPos = query.find(searchKey);
+484:     if (keyPos == string::npos) return "";
+485:     
+486:     size_t searchStart = keyPos + searchKey.length();
+487:     
+488:     // Skip whitespace
+489:     while (searchStart < query.length() && 
+490:            (query[searchStart] == ' ' || query[searchStart] == '\\t')) {
+491:         searchStart++;
+492:     }
+493:     
+494:     if (searchStart >= query.length()) return "";
+495:     
+496:     // Skip opening quote (may be escaped with backslash like \")
+497:     if (query[searchStart] == '"') {
+498:         searchStart++;
+499:     } else if (query[searchStart] == '\\' && 
+500:                searchStart + 1 < query.length() && 
+501:                query[searchStart + 1] == '"') {
+502:         // Skip escaped quote: \"
+503:         searchStart += 2;
+504:     }
+505:     
+506:     string value;
+507:     bool escaped = false;
+508:     
+509:     for (size_t i = searchStart; i < query.length(); i++) {
+510:         char c = query[i];
+511:         
+512:         if (escaped) {
+513:             // If we're escaped and see a quote, it's an escaped quote - skip it
+514:             if (c != '"') {
+515:                 value += c;
+516:             }
+517:             escaped = false;
+518:         } else if (c == '\\') {
+519:             escaped = true;
+520:         } else if (c == '"') {
+521:             // End of string
+522:             return value;
+523:         } else if (c == ' ' || c == ',' || c == ')' || c == '{' || c == '}') {
+524:             // End of value (unquoted)
+525:             return value;
+526:             
+527:         } else {
+528:             value += c;
+529:         }
+530:     }
+531:     
+532:     return value;
+533: }
+534: ```
+535: 
+536: ### Key Points:
+537: 1. Check for both `"` (unescaped) AND `\"` (escaped) as opening quotes
+538: 2. When `escaped=true`, a `"` means an escaped quote - skip it, don\'t add to value
+539: 3. Only return when you hit an UNESCAPED closing quote
+540: 4. Handle whitespace, commas, parentheses, and braces as value delimiters
+541: 
+542: ### Testing Query Parsing
 
-Rate limit configuration constants in `src/main.cpp`:
+The server logs both incoming requests and responses for debugging:
+```
+[DEBUG] Raw query: mutation { login(username: "admin", password: "password123") { success token } }
+[LOGIN] username='admin', password='password123'
+[DEBUG] Response: {"data":{"login":{"success":true,"token":"eyJhbG..."}}}
+```
+
+ALWAYS test with debug logging enabled to see what's actually being received:
+543: 
+544: ALWAYS test with debug logging enabled:
+545: 
+546: ```cpp
+547: cerr << "[DEBUG] Raw body: " << body << endl;
+548: cerr << "[DEBUG] Extracted query: " << queryStr << endl;
+549: cerr << "[DEBUG] username='" << username << "', password='" << password << "'" << endl;
+550: ```
+551: 
+552: If you see `username='"admin"'` (with quotes included), the parsing is broken.
+553: 
+554: ### Never Use Regex for This
+555: 
+556: Regex is fragile with escaped strings. Use the simple character-by-character parsing shown above.
+557: 
+558: ### If You Break This Again...
+559: 
+560: Symptoms to watch for:
+561: - `{\"data\":{\"login\":{\"success\":false,\"message\":\"Missing required fields: username, password\"}}}`
+562: - Logs show `username='"admin"'` or `username=''`
+563: - Server receives `\\"` in the raw body
+564: 
+565: Fix: Use the extractValue() implementation above.
+566: 
+567: ---
+568: 
+569: ## Fly.io Deployment
+570: 
+571: ### Why Fly.io?
+572: - Faster cold starts than Render
+573: - Better performance for low-traffic apps
+574: - Generous free tier
+575: - Docker-based deployments
+576: - Automatic HTTPS
+577: - Edge caching
+578: 
+579: ### Initial Setup
+580: 
+581: ```bash
+582: # Install flyctl
+583: curl -L https://fly.io/install.sh | sh
+584: export FLYCTL_INSTALL="$HOME/.fly"
+585: export PATH="$FLYCTL_INSTALL/bin:$PATH"
+586: 
+587: # Authenticate
+588: flyctl auth login
+589: 
+590: # Launch app (creates fly.toml and deploys)
+591: ./deploy-fly.sh
+592: ```
+593: 
+594: ### Manual Deployment
+595: ```bash
+596: # Deploy to Fly.io
+597: fly deploy
+598: 
+599: # Check status
+600: fly status
+601: 
+602: # View logs
+603: fly logs
+604: 
+605: # Open app
+606: fly open
+607: ```
+608: 
+609: ### Environment Variables
+610: Set these in Fly.io dashboard or via CLI:
+611: - `DATABASE_URL`: Neon PostgreSQL connection string (postgresql://...)
+612: - `JWT_SECRET`: JWT signing secret
+613: 
+614: Example:
+615: ```bash
+616: fly secrets set DATABASE_URL="postgresql://user:pass@host.neon.tech/dbname?sslmode=require"
+617: fly secrets set JWT_SECRET="your-jwt-secret"
+618: ```
+619: 
+620: ### Scale Down (Free Tier)
+621: ```bash
+622: # Scale to 0 machines when not in use (saves credits)
+623: fly scale count 0
+624: 
+625: # Scale back up
+626: fly scale count 1
+627: ```
+628: 
+629: ### Troubleshooting
+630: ```bash
+631: # Check deployed machines
+632: fly machine list
+633: 
+634: # Restart a machine
+635: fly machine restart <machine-id>
+636: 
+637: # Check connection to database
+638: fly ssh console
+639: psql "$DATABASE_URL" -c "SELECT 1"
+640: 
+641: # View recent logs
+642: fly logs
+643: 
+644: # Redeploy after config changes
+645: fly deploy
+646: ```
+647: 
+648: ### URLs After Deployment
+649: - **App**: https://graphql-bookstore.fly.dev
+650: - **GraphQL Playground**: https://graphql-bookstore.fly.dev/
+651: - **GraphQL Endpoint**: https://graphql-bookstore.fly.dev/graphql
+652: - **Health Check**: https://graphql-bookstore.fly.dev/health
+
+### Modularization Complete
+The `src/main.cpp` file has been fully modularized into smaller, feature-specific modules:
+
+| Module | Files | Description |
+|--------|-------|-------------|
+| **Shared Utilities** | `utils.h`, `utils.cpp` | `escapeJson`, `WriteCallback` |
+| **User Management** | `user_manager.h`, `user_manager.cpp` | User struct, JWT, auth functions |
+| **Book/Author Management** | `book_manager.h`, `book_manager.cpp` | Book, Author structs, cache loading |
+| **Cart/Order Management** | `order_manager.h`, `order_manager.cpp` | Cart, Order structs, order logic |
+| **Review/Webhook Management** | `extra_features.h`, `extra_features.cpp` | Review, Webhook structs |
+| **Database Management** | `db_manager.h`, `db_manager.cpp` | PostgreSQL connection handling |
+| **GraphQL Handler** | `graphql_handler.h`, `graphql_handler.cpp` | Query/mutation handlers, JSON converters |
+| **Network Manager** | `network_manager.h`, `network_manager.cpp` | `fetchURL`, `isURLWhitelisted` |
+| **HTML Generator** | `html_generator.h`, `html_generator.cpp` | `generateLandingHTML`, `generatePlaygroundHTML` |
+| **Rate Limiter** | `rate_limiter.h`, `rate_limiter.cpp` | Rate limiting logic |
+| **Payment Handler** | `payment_handler.h`, `payment_handler.cpp` | Vulnbank card processing |
+
+**Result**: `main.cpp` reduced from ~3359 lines to ~370 lines.
+
+### HTTP Request Handling
+The server now properly handles TCP packet fragmentation with `readFullRequest()`:
+
 ```cpp
-#define RATE_LIMIT_WINDOW_SECONDS 60
-#define RATE_LIMIT_MAX_REQUESTS 100
-#define RATE_LIMIT_BLOCK_DURATION 300
+bool readFullRequest(int clientSocket, string& request, int timeoutSec);
 ```
 
-### API Documentation Page
-The landing page (`generateLandingHTML()` in `src/main.cpp`) provides:
-- Glass-morphism UI design with animated backgrounds
-- **API Link Bar**: Small glass icon with pulse animation and copyable link to `api.graphqlbook.store/graphql`
-- Query Runner panel for testing GraphQL queries
-- Login and Registration panels with JWT token storage
-- Quick examples and available endpoints grid
-- Click-to-load endpoint examples
-- Vulnerability chapter slideshow
-
-**NOTE**: No built-in GraphQL Playground. Use external tools like:
-- https://studio.apollographql.com/
-- Postman, Insomnia, curl, Burp Suite
-
-**API Link Bar Features:**
-- Glass-styled icon with green gradient and pulse animation effect
-- Clickable API URL that copies to clipboard when clicked
-- Shows "Copied!" feedback for 2 seconds after clicking
-- Styled with italic serif font for "Access the API at:" label
-
-**Query Runner Features:**
-- Textarea for entering GraphQL queries
-- "Load Sample" button loads books query example
-- "Run Query" button executes query via XMLHttpRequest
-- Response displayed with JSON formatting
-- Optional username/password for authenticated requests
-
-**Authentication Panel Features:**
-- Separate Login and Register panels
-- JWT tokens stored in localStorage
-- Tokens automatically used for authenticated requests
-
-### Fly.io Deployment
-App name: `graphql-bookstore`
-URL: https://graphql-bookstore.fly.dev
-
-### Testing New Features
-```bash
-# Test cart with authentication
-cat > /tmp/test_login.json << 'EOF'
-{"query":"mutation { login(username: \"admin\", password: \"password123\") { token } }"}
-EOF
-TOKEN=$(curl -s -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_login.json | grep -oP '"token":"[^"]+' | cut -d'"' -f4)
-
-cat > /tmp/test_cart.json << 'EOF'
-{"query":"mutation { addToCart(bookId: 1, quantity: 2) { success message } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  --data-binary @/tmp/test_cart.json
-
-# Test order creation
-cat > /tmp/test_order.json << 'EOF'
-{"query":"mutation { createOrder { success orderId totalAmount } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $TOKEN" \
-  --data-binary @/tmp/test_order.json
-
-# Test admin queries (no auth required!)
-cat > /tmp/test_admin.json << 'EOF'
-{"query":"query { _adminStats { userCount bookCount totalRevenue } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_admin.json
-
-# Test SQL injection
-cat > /tmp/test_sql.json << 'EOF'
-{"query":"query { _searchAdvanced(query: \"1 OR 1=1\") { id title } }"}
-EOF
-curl -X POST http://localhost:4000/graphql \
-  -H 'Content-Type: application/json' \
-  --data-binary @/tmp/test_sql.json
-```
-
-### SSRF URL Whitelist
-Allowed prefixes for `_fetchExternalResource`:
-- `http://example.com`
-- `http://httpbin.org`
-- `http://api.github.com`, `https://api.github.com`
-- `http://169.254.169.254` (cloud metadata)
-- `http://localhost:`, `http://127.0.0.1:`
-
----
-
-## CRITICAL: GraphQL Query Parsing Guidelines
-
-### The Backslash-Escaped Quote Problem
-
-When bash receives curl commands with `\"` inside single-quoted JSON, bash adds additional backslashes. For example:
-
-```bash
-# What you TYPE:
--d '{"query":"mutation { login(username: \"admin\", password: \"password123\") { success } }"}'
-
-# What the SERVER receives:
-{"query":"mutation { login(username: \\"admin\\", password: \\"password123\\") { success } }"}
-```
-
-The `\"` becomes `\\"` - the backslash is LITERAL in the string.
-
-### Correct extractValue() Implementation
-
-This is the CORRECT implementation that handles escaped quotes:
-
-```cpp
-string extractValue(const string& query, const string& key) {
-    string searchKey = key + ":";
-    size_t keyPos = query.find(searchKey);
-    if (keyPos == string::npos) return "";
-    
-    size_t searchStart = keyPos + searchKey.length();
-    
-    // Skip whitespace
-    while (searchStart < query.length() && 
-           (query[searchStart] == ' ' || query[searchStart] == '\\t')) {
-        searchStart++;
-    }
-    
-    if (searchStart >= query.length()) return "";
-    
-    // Skip opening quote (may be escaped with backslash like \")
-    if (query[searchStart] == '"') {
-        searchStart++;
-    } else if (query[searchStart] == '\\' && 
-               searchStart + 1 < query.length() && 
-               query[searchStart + 1] == '"') {
-        // Skip escaped quote: \"
-        searchStart += 2;
-    }
-    
-    string value;
-    bool escaped = false;
-    
-    for (size_t i = searchStart; i < query.length(); i++) {
-        char c = query[i];
-        
-        if (escaped) {
-            // If we're escaped and see a quote, it's an escaped quote - skip it
-            if (c != '"') {
-                value += c;
-            }
-            escaped = false;
-        } else if (c == '\\') {
-            escaped = true;
-        } else if (c == '"') {
-            // End of string
-            return value;
-        } else if (c == ' ' || c == ',' || c == ')' || c == '{' || c == '}') {
-            // End of value (unquoted)
-            return value;
-        } else {
-            value += c;
-        }
-    }
-    
-    return value;
-}
-```
-
-### Key Points:
-1. Check for both `"` (unescaped) AND `\"` (escaped) as opening quotes
-2. When `escaped=true`, a `"` means an escaped quote - skip it, don\'t add to value
-3. Only return when you hit an UNESCAPED closing quote
-4. Handle whitespace, commas, parentheses, and braces as value delimiters
-
-### Testing Query Parsing
-
-ALWAYS test with debug logging enabled:
-
-```cpp
-cerr << "[DEBUG] Raw body: " << body << endl;
-cerr << "[DEBUG] Extracted query: " << queryStr << endl;
-cerr << "[DEBUG] username='" << username << "', password='" << password << "'" << endl;
-```
-
-If you see `username='"admin"'` (with quotes included), the parsing is broken.
-
-### Never Use Regex for This
-
-Regex is fragile with escaped strings. Use the simple character-by-character parsing shown above.
-
-### If You Break This Again...
-
-Symptoms to watch for:
-- `{\"data\":{\"login\":{\"success\":false,\"message\":\"Missing required fields: username, password\"}}}`
-- Logs show `username='"admin"'` or `username=''`
-- Server receives `\\"` in the raw body
-
-Fix: Use the extractValue() implementation above.
-
----
-
-## Fly.io Deployment
-
-### Why Fly.io?
-- Faster cold starts than Render
-- Better performance for low-traffic apps
-- Generous free tier
-- Docker-based deployments
-- Automatic HTTPS
-- Edge caching
-
-### Initial Setup
-
-```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
-export FLYCTL_INSTALL="$HOME/.fly"
-export PATH="$FLYCTL_INSTALL/bin:$PATH"
-
-# Authenticate
-flyctl auth login
-
-# Launch app (creates fly.toml and deploys)
-./deploy-fly.sh
-```
-
-### Manual Deployment
-```bash
-# Deploy to Fly.io
-fly deploy
-
-# Check status
-fly status
-
-# View logs
-fly logs
-
-# Open app
-fly open
-```
-
-### Environment Variables
-Set these in Fly.io dashboard or via CLI:
-- `DATABASE_URL`: Neon PostgreSQL connection string (postgresql://...)
-- `JWT_SECRET`: JWT signing secret
-
-Example:
-```bash
-fly secrets set DATABASE_URL="postgresql://user:pass@host.neon.tech/dbname?sslmode=require"
-fly secrets set JWT_SECRET="your-jwt-secret"
-```
-
-### Scale Down (Free Tier)
-```bash
-# Scale to 0 machines when not in use (saves credits)
-fly scale count 0
-
-# Scale back up
-fly scale count 1
-```
-
-### Troubleshooting
-```bash
-# Check deployed machines
-fly machine list
-
-# Restart a machine
-fly machine restart <machine-id>
-
-# Check connection to database
-fly ssh console
-psql "$DATABASE_URL" -c "SELECT 1"
-
-# View recent logs
-fly logs
-
-# Redeploy after config changes
-fly deploy
-```
-
-### URLs After Deployment
-- **App**: https://graphql-bookstore.fly.dev
-- **GraphQL Playground**: https://graphql-bookstore.fly.dev/
-- **GraphQL Endpoint**: https://graphql-bookstore.fly.dev/graphql
-- **Health Check**: https://graphql-bookstore.fly.dev/health
+**Features**:
+- Uses `select()` with 5-second timeout for non-blocking reads
+- Parses `Content-Length` header to determine exact body size
+- Loops until full body is received
+- Handles slow networks, large payloads, and TCP fragmentation
+- Prevents memory exhaustion with buffer limits

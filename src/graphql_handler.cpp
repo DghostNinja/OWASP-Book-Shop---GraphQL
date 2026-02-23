@@ -1,0 +1,1635 @@
+#include <string>
+#include <vector>
+#include <sstream>
+#include <regex>
+#include <iostream> 
+#include <map> 
+#include <ctime> 
+
+#include <postgresql/libpq-fe.h>
+#include <jwt.h>
+#include <curl/curl.h>
+
+#include "graphql_handler.h"
+#include "user_manager.h"
+#include "book_manager.h"
+#include "order_manager.h"
+#include "extra_features.h"
+#include "utils.h"
+#include "network_manager.h"
+#include "db_manager.h"
+#include "payment_handler.h"
+
+// External caches and DB connection
+extern PGconn *dbConn;
+extern std::map<std::string, User> usersCache;
+extern std::map<int, Book> booksCache;
+extern std::map<int, Author> authorsCache;
+extern std::map<std::string, std::vector<CartItem>> cartCache;
+extern std::map<std::string, Order> ordersCache;
+extern std::map<int, Review> reviewsCache;
+extern std::map<std::string, Webhook> webhooksCache;
+
+
+// GraphQL Helper Functions
+std::string extractJsonString(const std::string& body, size_t startPos) {
+    size_t braceCount = 0;
+    size_t endPos = startPos;
+    bool inString = false;
+    bool escaped = false;
+
+    for (size_t i = startPos; i < body.length(); ++i) {
+        char c = body[i];
+        if (escaped) {
+            escaped = false;
+        } else if (c == '\\') {
+            escaped = true;
+        } else if (c == '"') {
+            inString = !inString;
+        } else if (!inString) {
+            if (c == '{') {
+                braceCount++;
+            } else if (c == '}') {
+                braceCount--;
+            }
+        }
+        if (braceCount == 0 && !inString && c == '}') {
+            endPos = i;
+            break;
+        }
+    }
+    return body.substr(startPos, endPos - startPos + 1);
+}
+
+std::string extractQueryFromBody(const std::string& body) {
+    size_t queryPos = body.find("\"query\":");
+    if (queryPos == std::string::npos) return "";
+    size_t start = body.find('"', queryPos + 8); // Skip \"query\":
+    if (start == std::string::npos) return "";
+    start++; // Move past the opening quote
+
+    std::string queryString;
+    bool escaped = false;
+    for (size_t i = start; i < body.length(); ++i) {
+        if (escaped) {
+            queryString += body[i];
+            escaped = false;
+        } else if (body[i] == '\\') {
+            escaped = true;
+            // queryString += body[i]; // Keep the backslash for proper parsing later
+        } else if (body[i] == '"') {
+            // End of query string
+            break;
+        } else {
+            queryString += body[i];
+        }
+    }
+    return queryString;
+}
+
+std::string extractValue(const std::string& query, const std::string& key) {
+    std::string searchKey = key + ":";
+    size_t keyPos = query.find(searchKey);
+    if (keyPos == std::string::npos) return "";
+    
+    size_t searchStart = keyPos + searchKey.length();
+    
+    // Skip whitespace
+    while (searchStart < query.length() && 
+           (query[searchStart] == ' ' || query[searchStart] == '\t')) {
+        searchStart++;
+    }
+    
+    if (searchStart >= query.length()) return "";
+    
+    // Skip opening quote (may be escaped with backslash like \")
+    if (query[searchStart] == '"') {
+        searchStart++;
+    } else if (query[searchStart] == '\\' && 
+               searchStart + 1 < query.length() && 
+               query[searchStart + 1] == '"') {
+        // Skip escaped quote: \"
+        searchStart += 2;
+    }
+    
+    std::string value;
+    bool escaped = false;
+    
+    for (size_t i = searchStart; i < query.length(); i++) {
+        char c = query[i];
+        
+        if (escaped) {
+            // If we're escaped and see a quote, it's an escaped quote - skip it
+            if (c != '"') {
+                value += c;
+            }
+            escaped = false;
+        } else if (c == '\\') {
+            escaped = true;
+        } else if (c == '"') {
+            // End of string
+            return value;
+        } else if (c == ' ' || c == ',' || c == ')' || c == '{' || c == '}') {
+            // End of value (unquoted)
+            return value;
+            
+        } else {
+            value += c;
+        }
+    }
+    
+    return value;
+}
+
+std::string extractIntValue(const std::string& query, const std::string& key) {
+    std::string searchKey = key + ":";
+    size_t keyPos = query.find(searchKey);
+    if (keyPos == std::string::npos) return "";
+    size_t start = keyPos + searchKey.length();
+    while (start < query.length() && (query[start] == ' ' || query[start] == '\t')) {
+        start++;
+    }
+    size_t end = start;
+    while (end < query.length() && isdigit(query[end])) {
+        end++;
+    }
+    return query.substr(start, end - start);
+}
+
+bool isFieldRequested(const std::string& query, const std::string& fieldName) {
+    size_t pos = query.find(fieldName);
+    while (pos != std::string::npos) {
+        char before = (pos > 0) ? query[pos - 1] : ' ';
+        char after = (pos + fieldName.length() < query.length()) ? query[pos + fieldName.length()] : ' ';
+        
+        bool validStart = (before == ' ' || before == '{' || before == '\n' || before == '\t' || before == ',');
+        bool validEnd = (after == ' ' || after == ',' || after == '}' || after == '{' || after == '\r' || after == '\t' || after == '\n');
+        
+        if (validStart && validEnd) return true;
+        
+        pos = query.find(fieldName, pos + 1);
+    }
+    return false;
+}
+
+// JSON Conversion Functions
+std::string userToJson(const User& user, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "id")) {
+        ss << "\"id\":\"" << user.id << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "username")) {
+        if (!firstField) ss << ",";
+        ss << "\"username\":\"" << escapeJson(user.username) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "firstName")) {
+        if (!firstField) ss << ",";
+        ss << "\"firstName\":\"" << escapeJson(user.firstName) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "lastName")) {
+        if (!firstField) ss << ",";
+        ss << "\"lastName\":\"" << escapeJson(user.lastName) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "role")) {
+        if (!firstField) ss << ",";
+        ss << "\"role\":\"" << escapeJson(user.role) << "\"";
+        firstField = false;
+    }
+
+    if (query.empty() || isFieldRequested(query, "phone")) {
+        if (!firstField) ss << ",";
+        ss << "\"phone\":\"" << escapeJson(user.phone) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "address")) {
+        if (!firstField) ss << ",";
+        ss << "\"address\":\"" << escapeJson(user.address) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "city")) {
+        if (!firstField) ss << ",";
+        ss << "\"city\":\"" << escapeJson(user.city) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "state")) {
+        if (!firstField) ss << ",";
+        ss << "\"state\":\"" << escapeJson(user.state) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "zipCode")) {
+        if (!firstField) ss << ",";
+        ss << "\"zipCode\":\"" << escapeJson(user.zipCode) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "country")) {
+        if (!firstField) ss << ",";
+        ss << "\"country\":\"" << escapeJson(user.country) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "isActive")) {
+        if (!firstField) ss << ",";
+        ss << "\"isActive\":" << (user.isActive ? "true" : "false");
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string bookToJson(const Book& book, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "id")) {
+        ss << "\"id\":" << book.id;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "title")) {
+        if (!firstField) ss << ",";
+        ss << "\"title\":\"" << escapeJson(book.title) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "isbn")) {
+        if (!firstField) ss << ",";
+        ss << "\"isbn\":\"" << escapeJson(book.isbn) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "description")) {
+        if (!firstField) ss << ",";
+        ss << "\"description\":\"" << escapeJson(book.description) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "price")) {
+        if (!firstField) ss << ",";
+        ss << "\"price\":" << book.price;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "salePrice")) {
+        if (!firstField) ss << ",";
+        ss << "\"salePrice\":" << book.salePrice;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "stockQuantity")) {
+        if (!firstField) ss << ",";
+        ss << "\"stockQuantity\":" << book.stockQuantity;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "author")) {
+        if (!firstField) ss << ",";
+        Author* author = getAuthorById(book.authorId);
+        if (author) {
+            ss << "\"author\":{";
+            bool firstAuthorField = true;
+            if (isFieldRequested(query, "id") && query.find("author {") != std::string::npos) {
+                ss << "\"id\":" << author->id;
+                firstAuthorField = false;
+            }
+            if (isFieldRequested(query, "firstName")) {
+                if (!firstAuthorField) ss << ",";
+                ss << "\"firstName\":\"" << escapeJson(author->firstName) << "\"";
+                firstAuthorField = false;
+            }
+            if (isFieldRequested(query, "lastName")) {
+                if (!firstAuthorField) ss << ",";
+                ss << "\"lastName\":\"" << escapeJson(author->lastName) << "\"";
+                firstAuthorField = false;
+            }
+            if (isFieldRequested(query, "bio")) {
+                if (!firstAuthorField) ss << ",";
+                ss << "\"bio\":\"" << escapeJson(author->bio) << "\"";
+                firstAuthorField = false;
+            }
+            ss << "}";
+        } else {
+            ss << "\"author\":null";
+        }
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string cartItemToJson(const CartItem& item, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "bookId")) {
+        ss << "\"bookId\":" << item.bookId;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "quantity")) {
+        if (!firstField) ss << ",";
+        ss << "\"quantity\":" << item.quantity;
+        firstField = false;
+    }
+    // Nested book object
+    if (query.find("book {") != std::string::npos) {
+        if (!firstField) ss << ",";
+        Book* book = getBookById(item.bookId);
+        if (book) {
+            ss << "\"book\":" << bookToJson(*book, query.substr(query.find("book {")));
+        } else {
+            ss << "\"book\":null";
+        }
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string orderItemToJson(const OrderItem& item, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "bookId")) {
+        ss << "\"bookId\":" << item.bookId;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "bookTitle")) {
+        if (!firstField) ss << ",";
+        ss << "\"bookTitle\":\"" << escapeJson(item.bookTitle) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "quantity")) {
+        if (!firstField) ss << ",";
+        ss << "\"quantity\":" << item.quantity;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "unitPrice")) {
+        if (!firstField) ss << ",";
+        ss << "\"unitPrice\":" << item.unitPrice;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "totalPrice")) {
+        if (!firstField) ss << ",";
+        ss << "\"totalPrice\":" << item.totalPrice;
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string orderToJson(const Order& order, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "id")) {
+        ss << "\"id\":\"" << order.id << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "orderNumber")) {
+        if (!firstField) ss << ",";
+        ss << "\"orderNumber\":\"" << escapeJson(order.orderNumber) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "userId")) {
+        if (!firstField) ss << ",";
+        ss << "\"userId\":\"" << order.userId << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "status")) {
+        if (!firstField) ss << ",";
+        ss << "\"status\":\"" << escapeJson(order.status) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "totalAmount")) {
+        if (!firstField) ss << ",";
+        ss << "\"totalAmount\":" << order.totalAmount;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "items")) {
+        if (!firstField) ss << ",";
+        ss << "\"items\":[";
+        bool firstItem = true;
+        for (const auto& item : order.items) {
+            if (!firstItem) ss << ",";
+            ss << orderItemToJson(item, query);
+            firstItem = false;
+        }
+        ss << "]";
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string reviewToJson(const Review& review, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "id")) {
+        ss << "\"id\":\"" << review.id << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "bookId")) {
+        if (!firstField) ss << ",";
+        ss << "\"bookId\":" << review.bookId;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "userId")) {
+        if (!firstField) ss << ",";
+        ss << "\"userId\":\"" << review.userId << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "rating")) {
+        if (!firstField) ss << ",";
+        ss << "\"rating\":" << review.rating;
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "comment")) {
+        if (!firstField) ss << ",";
+        ss << "\"comment\":\"" << escapeJson(review.comment) << "\"";
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+std::string webhookToJson(const Webhook& webhook, const std::string& query) {
+    std::stringstream ss;
+    ss << "{";
+    bool firstField = true;
+    if (query.empty() || isFieldRequested(query, "id")) {
+        ss << "\"id\":\"" << webhook.id << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "userId")) {
+        if (!firstField) ss << ",";
+        ss << "\"userId\":\"" << webhook.userId << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "url")) {
+        if (!firstField) ss << ",";
+        ss << "\"url\":\"" << escapeJson(webhook.url) << "\"";
+        firstField = false;
+    }
+
+    if (query.empty() || isFieldRequested(query, "secret")) {
+        if (!firstField) ss << ",";
+        ss << "\"secret\":\"" << escapeJson(webhook.secret) << "\"";
+        firstField = false;
+    }
+    if (query.empty() || isFieldRequested(query, "isActive")) {
+        if (!firstField) ss << ",";
+        ss << "\"isActive\":" << (webhook.isActive ? "true" : "false");
+        firstField = false;
+    }
+    ss << "}";
+    return ss.str();
+}
+
+// GraphQL Handler Functions
+std::string handleQuery(const std::string& query, const User& currentUser) {
+    std::stringstream response;
+    response << "{\"data\":{";
+    bool firstField = true;
+
+    if (query.find("__schema") != std::string::npos) {
+        std::cerr << "[QUERY] __schema (introspection)" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"__schema\":{";
+        response << "\"queryType\":{";
+        response << "\"name\":\"Query\",";
+        response << "\"fields\":[";
+        response << "{\"name\":\"me\"},";
+        response << "{\"name\":\"books\"},";
+        response << "{\"name\":\"book\"},";
+        response << "{\"name\":\"cart\"},";
+        response << "{\"name\":\"orders\"},";
+        response << "{\"name\":\"reviews\"},";
+        response << "{\"name\":\"myReviews\"},";
+        response << "{\"name\":\"webhooks\"},";
+        response << "{\"name\":\"_internalUserSearch\"},";
+        response << "{\"name\":\"_fetchExternalResource\"},";
+        response << "{\"name\":\"_searchAdvanced\"},";
+        response << "{\"name\":\"_adminStats\"},";
+        response << "{\"name\":\"_adminAllOrders\"},";
+        response << "{\"name\":\"_adminAllPayments\"},";
+        response << "{\"name\":\"_batchQuery\"},";
+        response << "{\"name\":\"processXMLData\"},";
+        response << "{\"name\":\"applyCoupon\"},";
+        response << "{\"name\":\"decodeJWT\"},";
+        response << "{\"name\":\"manageCache\"},";
+        response << "{\"name\":\"handleRecursiveQuery\"}";
+        response << "]},";
+        response << "\"mutationType\":{";
+        response << "\"name\":\"Mutation\",";
+        response << "\"fields\":[";
+        response << "{\"name\":\"register\"},";
+        response << "{\"name\":\"login\"},";
+        response << "{\"name\":\"updateProfile\"},";
+        response << "{\"name\":\"addToCart\"},";
+        response << "{\"name\":\"removeFromCart\"},";
+        response << "{\"name\":\"createOrder\"},";
+        response << "{\"name\":\"purchaseCart\"},";
+        response << "{\"name\":\"cancelOrder\"},";
+        response << "{\"name\":\"createReview\"},";
+        response << "{\"name\":\"deleteReview\"},";
+        response << "{\"name\":\"registerWebhook\"},";
+        response << "{\"name\":\"testWebhook\"}";
+        response << "]}";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("me {") != std::string::npos ||
+        query.find("me(") != std::string::npos ||
+        (query.find("me") != std::string::npos && query.find("name") == std::string::npos && query.find("__schema") == std::string::npos)) {
+        std::cerr << "[QUERY] me (user: " << currentUser.username << ")" << std::endl;
+        if (!currentUser.id.empty()) {
+            User* fullUser = getUserByUsername(currentUser.username);
+            if (fullUser) {
+                if (!firstField) response << ",";
+                response << "\"me\":" << userToJson(*fullUser, query);
+            } else {
+                if (!firstField) response << ",";
+                response << "\"me\":" << userToJson(currentUser, query);
+            }
+            firstField = false;
+        } else {
+            if (!firstField) response << ",";
+            response << "\"me\":null";
+            firstField = false;
+        }
+    }
+
+    if (query.find("book(") != std::string::npos || query.find("book {") != std::string::npos) {
+        std::string bookIdStr = extractIntValue(query, "id");
+        int bookId = bookIdStr.empty() ? 0 : stoi(bookIdStr);
+        std::cerr << "[QUERY] book(id: " << bookId << ")" << std::endl;
+        Book* book = getBookById(bookId);
+        if (book) {
+            if (!firstField) response << ",";
+            response << "\"book\":" << bookToJson(*book, query);
+            firstField = false;
+        } else {
+            if (!firstField) response << ",";
+            response << "\"book\":null";
+            firstField = false;
+        }
+    }
+
+    if (query.find("books(") != std::string::npos || query.find("books {") != std::string::npos) {
+        std::string searchQuery = extractValue(query, "search");
+        std::string categoryIdStr = extractIntValue(query, "categoryId");
+        int categoryId = categoryIdStr.empty() ? 0 : stoi(categoryIdStr);
+        std::cerr << "[QUERY] books(search: \"" << searchQuery << "\", categoryId: " << categoryId << ")" << std::endl;
+        std::vector<Book> books = searchBooks(searchQuery, categoryId);
+        if (!firstField) response << ",";
+        response << "\"books\":[";
+        for (size_t i = 0; i < books.size(); i++) {
+            if (i > 0) response << ",";
+            response << bookToJson(books[i], query);
+        }
+        response << "]";
+        firstField = false;
+    }
+
+    if (query.find("_internalUserSearch") != std::string::npos) {
+        std::string usernamePattern = extractValue(query, "username");
+        std::cerr << "[QUERY] _internalUserSearch(username: \"" << usernamePattern << "\")" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"_internalUserSearch\":[";
+        bool firstUser = true;
+        for (auto& pair : usersCache) {
+            if (usernamePattern.empty() || pair.second.username.find(usernamePattern) != std::string::npos) {
+                if (!firstUser) response << ",";
+                response << userToJson(pair.second, query);
+                firstUser = false;
+            }
+        }
+        response << "]";
+        firstField = false;
+    }
+
+    if (query.find("_fetchExternalResource") != std::string::npos) {
+        std::string url = extractValue(query, "url");
+        std::cerr << "[QUERY] _fetchExternalResource(url: \"" << url << "\")" << std::endl;
+
+        std::string result = "";
+        if (isURLWhitelisted(url)) {
+            if (fetchURL(url, result)) {
+                if (!firstField) response << ",";
+                response << "\"_fetchExternalResource\":\"" << escapeJson(result) << "\"";
+                firstField = false;
+            } else {
+                if (!firstField) response << ",";
+                response << "\"_fetchExternalResource\":\"Failed to fetch URL: " + escapeJson(url) + "\"";
+                firstField = false;
+            }
+        } else {
+            if (!firstField) response << ",";
+            response << "\"_fetchExternalResource\":\"URL not whitelisted: " + escapeJson(url) + "\"";
+            firstField = false;
+        }
+    }
+
+    if (query.find("cart") != std::string::npos && !currentUser.id.empty()) {
+        std::cerr << "[QUERY] cart (user: " << currentUser.username << ")" << std::endl;
+        std::string cartId = "";
+        const char* cartParams[1] = {currentUser.id.c_str()};
+        PGresult* cartRes = PQexecParams(dbConn, "SELECT id FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+        if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+            cartId = PQgetvalue(cartRes, 0, 0);
+        }
+        PQclear(cartRes);
+
+        if (!firstField) response << ",";
+        response << "\"cart\":{";
+        if (query.empty() || isFieldRequested(query, "id")) {
+            response << "\"id\":\"" << cartId << "\"";
+        }
+        if (query.empty() || isFieldRequested(query, "userId")) {
+            if (!cartId.empty()) response << ",";
+            response << "\"userId\":\"" << currentUser.id << "\"";
+        }
+        if (query.empty() || isFieldRequested(query, "items")) {
+            if (!cartId.empty()) response << ",";
+            response << "\"items\":[";
+            if (!cartId.empty()) {
+                const char* itemParams[1] = {cartId.c_str()};
+                PGresult* itemsRes = PQexecParams(dbConn, 
+                    "SELECT ci.id, ci.book_id, ci.quantity, b.title, b.price "
+                    "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                    1, nullptr, itemParams, nullptr, nullptr, 0);
+                if (PQresultStatus(itemsRes) == PGRES_TUPLES_OK) {
+                    int rows = PQntuples(itemsRes);
+                    for (int i = 0; i < rows; i++) {
+                        if (i > 0) response << ",";
+                        response << "{";
+                        response << "\"id\":\"" << PQgetvalue(itemsRes, i, 0) << "\",";
+                        response << "\"bookId\":" << PQgetvalue(itemsRes, i, 1) << ",";
+                        response << "\"quantity\":" << PQgetvalue(itemsRes, i, 2) << ",";
+                        response << "\"title\":\"" << escapeJson(PQgetvalue(itemsRes, i, 3)) << "\",";
+                        response << "\"price\":" << PQgetvalue(itemsRes, i, 4);
+                        response << "}";
+                    }
+                }
+                PQclear(itemsRes);
+            }
+            response << "]";
+        }
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("orders") != std::string::npos && !currentUser.id.empty()) {
+        std::cerr << "[QUERY] orders (user: " << currentUser.username << ")" << std::endl;
+        const char* params[1] = {currentUser.id.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, order_number, status, subtotal, tax_amount, shipping_amount, total_amount, payment_status, created_at FROM orders WHERE user_id = $1 ORDER BY created_at DESC", 1, nullptr, params, nullptr, nullptr, 0);
+        if (!firstField) response << ",";
+        response << "\"orders\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                response << "{";
+                response << "\"id\":\"" << PQgetvalue(res, i, 0) << "\",";
+                response << "\"userId\":\"" << PQgetvalue(res, i, 1) << "\",";
+                response << "\"orderNumber\":\"" << PQgetvalue(res, i, 2) << "\",";
+                response << "\"status\":\"" << PQgetvalue(res, i, 3) << "\",";
+                response << "\"subtotal\":" << PQgetvalue(res, i, 4) << ",";
+                response << "\"taxAmount\":" << PQgetvalue(res, i, 5) << ",";
+                response << "\"shippingAmount\":" << PQgetvalue(res, i, 6) << ",";
+                response << "\"totalAmount\":" << PQgetvalue(res, i, 7) << ",";
+                response << "\"paymentStatus\":\"" << PQgetvalue(res, i, 8) << "\",";
+                response << "\"createdAt\":\"" << PQgetvalue(res, i, 9) << "\"";
+                response << "}";
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("bookReviews") != std::string::npos || (query.find("reviews") != std::string::npos && query.find("bookId") != std::string::npos)) {
+        std::string bookIdStr = extractIntValue(query, "bookId");
+        int bookId = bookIdStr.empty() ? 0 : stoi(bookIdStr);
+        std::cerr << "[QUERY] bookReviews(bookId: " << bookId << ")" << std::endl;
+        const char* params[1] = {std::to_string(bookId).c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, book_id, rating, comment, is_verified_purchase, created_at FROM reviews WHERE book_id = $1 AND is_approved = true", 1, nullptr, params, nullptr, nullptr, 0);
+        if (!firstField) response << ",";
+        response << "\"bookReviews\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                Review review;
+                review.id = atoi(PQgetvalue(res, i, 0));
+                review.userId = PQgetvalue(res, i, 1);
+                review.bookId = atoi(PQgetvalue(res, i, 2));
+                review.rating = atoi(PQgetvalue(res, i, 3));
+                review.comment = PQgetvalue(res, i, 4) ? PQgetvalue(res, i, 4) : "";
+                review.isVerifiedPurchase = (std::string(PQgetvalue(res, i, 5)) == "t");
+                review.createdAt = PQgetvalue(res, i, 6);
+                response << reviewToJson(review, query);
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("myReviews") != std::string::npos && !currentUser.id.empty()) {
+        std::cerr << "[QUERY] myReviews (user: " << currentUser.username << ")" << std::endl;
+        const char* params[1] = {currentUser.id.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, book_id, rating, comment, is_verified_purchase, created_at FROM reviews WHERE user_id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+        if (!firstField) response << ",";
+        response << "\"myReviews\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                Review review;
+                review.id = atoi(PQgetvalue(res, i, 0));
+                review.userId = PQgetvalue(res, i, 1);
+                review.bookId = atoi(PQgetvalue(res, i, 2));
+                review.rating = atoi(PQgetvalue(res, i, 3));
+                review.comment = PQgetvalue(res, i, 4) ? PQgetvalue(res, i, 4) : "";
+                review.isVerifiedPurchase = (std::string(PQgetvalue(res, i, 5)) == "t");
+                review.createdAt = PQgetvalue(res, i, 6);
+                response << reviewToJson(review, query);
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("webhooks") != std::string::npos && !currentUser.id.empty()) {
+        std::cerr << "[QUERY] webhooks (user: " << currentUser.username << ")" << std::endl;
+        const char* params[1] = {currentUser.id.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, url, secret, is_active FROM webhooks WHERE user_id = $1 AND is_active = true", 1, nullptr, params, nullptr, nullptr, 0);
+        if (!firstField) response << ",";
+        response << "\"webhooks\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                Webhook webhook;
+                webhook.id = PQgetvalue(res, i, 0);
+                webhook.userId = PQgetvalue(res, i, 1);
+                webhook.url = PQgetvalue(res, i, 2);
+                webhook.secret = PQgetvalue(res, i, 3) ? PQgetvalue(res, i, 3) : "";
+                webhook.isActive = (std::string(PQgetvalue(res, i, 4)) == "t");
+                response << webhookToJson(webhook, query);
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_adminStats") != std::string::npos) {
+        std::cerr << "[QUERY] _adminStats" << std::endl;
+        PGresult* res = PQexec(dbConn, "SELECT "
+            "(SELECT COUNT(*) FROM users) as user_count, "
+            "(SELECT COUNT(*) FROM books) as book_count, "
+            "(SELECT COUNT(*) FROM orders) as order_count, "
+            "(SELECT SUM(total_amount) FROM orders) as total_revenue, "
+            "(SELECT COUNT(*) FROM reviews) as review_count");
+
+        if (!firstField) response << ",";
+        response << "\"_adminStats\":{";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            response << "\"userCount\":" << (PQgetvalue(res, 0, 0) ? PQgetvalue(res, 0, 0) : "0") << ",";
+            response << "\"bookCount\":" << (PQgetvalue(res, 0, 1) ? PQgetvalue(res, 0, 1) : "0") << ",";
+            response << "\"orderCount\":" << (PQgetvalue(res, 0, 2) ? PQgetvalue(res, 0, 2) : "0") << ",";
+            response << "\"totalRevenue\":" << (PQgetvalue(res, 0, 3) ? PQgetvalue(res, 0, 3) : "0") << ",";
+            response << "\"reviewCount\":" << (PQgetvalue(res, 0, 4) ? PQgetvalue(res, 0, 4) : "0");
+        } else {
+            response << "\"error\":\"Failed to load stats\"";
+        }
+        response << "}";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_adminAllOrders") != std::string::npos) {
+        std::cerr << "[QUERY] _adminAllOrders" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"_adminAllOrders\":[";
+        bool firstOrder = true;
+        for (auto& pair : ordersCache) {
+            if (!firstOrder) response << ",";
+            response << orderToJson(pair.second, query);
+            firstOrder = false;
+        }
+        response << "]";
+        firstField = false;
+    }
+
+    if (query.find("_adminAllPayments") != std::string::npos) {
+        std::cerr << "[QUERY] _adminAllPayments" << std::endl;
+        PGresult* res = PQexec(dbConn, "SELECT id, order_id, user_id, amount, currency, payment_method, status, transaction_id, created_at FROM payment_transactions");
+
+        if (!firstField) response << ",";
+        response << "\"_adminAllPayments\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                response << "{";
+                response << "\"id\":\"" << PQgetvalue(res, i, 0) << "\",";
+                response << "\"orderId\":\"" << PQgetvalue(res, i, 1) << "\",";
+                response << "\"userId\":\"" << PQgetvalue(res, i, 2) << "\",";
+                response << "\"amount\":" << PQgetvalue(res, i, 3) << ",";
+                response << "\"currency\":\"" << PQgetvalue(res, i, 4) << "\",";
+                response << "\"paymentMethod\":\"" << PQgetvalue(res, i, 5) << "\",";
+                response << "\"status\":\"" << PQgetvalue(res, i, 6) << "\",";
+                response << "\"transactionId\":\"" << (PQgetvalue(res, i, 7) ? PQgetvalue(res, i, 7) : "") << "\",";
+                response << "\"createdAt\":\"" << PQgetvalue(res, i, 8) << "\"";
+                response << "}";
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_batchQuery") != std::string::npos) {
+        std::cerr << "[QUERY] _batchQuery" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"_batchQuery\":{";
+        response << "\"bypassed\":true,";
+        response << "\"rateLimit\":false,";
+        response << "\"message\":\"Batch queries bypass standard rate limiting - use multiple operations in single request\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("processXMLData") != std::string::npos) {
+        std::cerr << "[QUERY] processXMLData" << std::endl;
+        std::string xmlData = extractValue(query, "xml");
+        if (!firstField) response << ",";
+        response << "\"processXMLData\":{";
+        response << "\"parsed\":true,";
+        response << "\"entities\":[";
+        if (xmlData.find("<!ENTITY") != std::string::npos || xmlData.find("SYSTEM") != std::string::npos) {
+            response << "\"xxe_detected\":true";
+        } else {
+            response << "\"data\":\"processed\"";
+        }
+        response << "]";
+        response << ",\"warning\":\"XML entities processed without validation\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("applyCoupon") != std::string::npos) {
+        std::string couponCode = extractValue(query, "code");
+        std::cerr << "[QUERY] applyCoupon(code: \"" << couponCode << "\")" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"applyCoupon\":{";
+        response << "\"success\":true,";
+        response << "\"discount\":25,";
+        response << "\"message\":\"Coupon applied - race condition possible with concurrent requests\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("decodeJWT") != std::string::npos) {
+        std::cerr << "[QUERY] decodeJWT" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"decodeJWT\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"alg\":\"HS256\",";
+        response << "\"attack\":\"Verify token with algorithm set to 'none' or use public key as HMAC secret\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("manageCache") != std::string::npos) {
+        std::cerr << "[QUERY] manageCache" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"manageCache\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"header\":\"X-Forwarded-Host\",";
+        response << "\"impact\":\"Cache can be poisoned via HTTP headers - inject malicious content\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("handleRecursiveQuery") != std::string::npos) {
+        std::cerr << "[QUERY] handleRecursiveQuery" << std::endl;
+        if (!firstField) response << ",";
+        response << "\"handleRecursiveQuery\":{";
+        response << "\"vulnerable\":true,";
+        response << "\"maxDepth\":\"unlimited\",";
+        response << "\"attack\":\"Craft deeply nested queries to cause stack overflow or memory exhaustion\"";
+        response << "}";
+        firstField = false;
+    }
+
+    if (query.find("_searchAdvanced") != std::string::npos) {
+        std::string searchQuery = extractValue(query, "query");
+        std::string filters = extractValue(query, "filters");
+        std::cerr << "[QUERY] _searchAdvanced(query: \"" << searchQuery << "\")" << std::endl;
+
+        if (!firstField) response << ",";
+        response << "\"_searchAdvanced\":[";
+
+        std::string sql = "SELECT id, isbn, title, description, author_id, category_id, price, sale_price, stock_quantity FROM books WHERE is_active = true";
+        if (!searchQuery.empty()) {
+            sql += " AND (title ILIKE '%" + searchQuery + "%' OR description ILIKE '%" + searchQuery + "%' OR isbn = '" + searchQuery + "')";
+        }
+
+        PGresult* res = PQexec(dbConn, sql.c_str());
+
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                Book book;
+                book.id = atoi(PQgetvalue(res, i, 0));
+                book.isbn = PQgetvalue(res, i, 1);
+                book.title = PQgetvalue(res, i, 2);
+                book.description = PQgetvalue(res, i, 3) ? PQgetvalue(res, i, 3) : "";
+                book.authorId = atoi(PQgetvalue(res, i, 4));
+                book.categoryId = atoi(PQgetvalue(res, i, 5));
+                book.price = atof(PQgetvalue(res, i, 6));
+                book.salePrice = PQgetvalue(res, i, 7) ? atof(PQgetvalue(res, i, 7)) : 0;
+                book.stockQuantity = atoi(PQgetvalue(res, i, 8));
+                response << bookToJson(book, query);
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    response << "}}";
+    return response.str();
+}
+
+std::string handleMutation(const std::string& query, User& currentUser) {
+    std::stringstream response;
+    response << "{\"data\":{";
+    bool firstField = true;
+
+    if (query.find("register(") != std::string::npos) {
+        std::string username = extractValue(query, "username");
+        std::string password = extractValue(query, "password");
+        std::string firstName = extractValue(query, "firstName");
+        std::string lastName = extractValue(query, "lastName");
+
+        std::cerr << "[REGISTER] username='" << username << "', firstName='" << firstName << "', lastName='" << lastName << "'" << std::endl;
+
+        if (!username.empty() && !password.empty() && !firstName.empty() && !lastName.empty()) {
+            if (!getUserByUsername(username)) {
+                std::string sql = "INSERT INTO users (username, password_hash, first_name, last_name, role) VALUES ($1, $2, $3, $4, 'user') RETURNING id";
+                const char* paramValues[4] = {username.c_str(), password.c_str(), firstName.c_str(), lastName.c_str()};
+                PGresult* res = PQexecParams(dbConn, sql.c_str(), 4, nullptr, paramValues, nullptr, nullptr, 0);
+
+                if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+                    std::string userId = PQgetvalue(res, 0, 0);
+                    User newUser;
+                    newUser.id = userId;
+                    newUser.username = username;
+                    newUser.passwordHash = password;
+                    newUser.firstName = firstName;
+                    newUser.lastName = lastName;
+                    newUser.role = "user";
+                    newUser.isActive = true;
+                    usersCache[username] = newUser;
+
+                    std::string token = generateJWT(newUser);
+                    if (!firstField) response << ",";
+                    response << "\"register\":{";
+                    response << "\"success\":true,";
+                    response << "\"message\":\"Registration successful\",";
+                    response << "\"token\":\"" << token << "\",";
+                    response << "\"user\":" << userToJson(newUser, query);
+                    response << "}";
+                    firstField = false;
+                } else {
+                    if (!firstField) response << ",";
+                    response << "\"register\":{";
+                    response << "\"success\":false,";
+                    response << "\"message\":\"Database error\"";
+                    response << "}";
+                    firstField = false;
+                }
+                PQclear(res);
+            } else {
+                if (!firstField) response << ",";
+                response << "\"register\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"Username already exists\"";
+                response << "}";
+                firstField = false;
+            }
+        } else {
+            if (!firstField) response << ",";
+            response << "\"register\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Missing required fields: username, password, firstName, lastName\"";
+            response << "}";
+            firstField = false;
+        }
+    }
+
+    if (query.find("login(") != std::string::npos) {
+        std::string username = extractValue(query, "username");
+        std::string password = extractValue(query, "password");
+        
+        std::cerr << "[LOGIN] username='" << username << "', password='" << password << "'" << std::endl;
+
+        if (!username.empty() && !password.empty()) {
+            User* user = getUserByUsername(username);
+            if (user && user->passwordHash == password) {
+                std::string token = generateJWT(*user);
+                currentUser = *user;
+
+                std::string sql = "UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1";
+                const char* paramValues[1] = {user->id.c_str()};
+                PGresult* res = PQexecParams(dbConn, sql.c_str(), 1, nullptr, paramValues, nullptr, nullptr, 0);
+                PQclear(res);
+
+                if (!firstField) response << ",";
+                response << "\"login\":{";
+                response << "\"success\":true,";
+                response << "\"message\":\"Login successful\",";
+                response << "\"token\":\"" << token << "\",";
+                response << "\"user\":" << userToJson(*user, query);
+                response << "}";
+                firstField = false;
+            } else {
+                if (!firstField) response << ",";
+                response << "\"login\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"Invalid username or password\"";
+                response << "}";
+                firstField = false;
+            }
+        }
+        else {
+            if (!firstField) response << ",";
+            response << "\"login\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Missing required fields: username, password\"";
+            response << "}";
+            firstField = false;
+        }
+    }
+
+    if (query.find("updateProfile(") != std::string::npos && !currentUser.id.empty()) {
+        currentUser.firstName = extractValue(query, "firstName");
+        currentUser.lastName = extractValue(query, "lastName");
+        currentUser.phone = extractValue(query, "phone");
+        currentUser.address = extractValue(query, "address");
+        currentUser.city = extractValue(query, "city");
+        currentUser.state = extractValue(query, "state");
+        currentUser.zipCode = extractValue(query, "zipCode");
+        currentUser.country = extractValue(query, "country");
+        currentUser.role = extractValue(query, "role");
+
+        std::cerr << "[UPDATEPROFILE] user='" << currentUser.username << "', firstName='" << currentUser.firstName << "', lastName='" << currentUser.lastName << "'" << std::endl;
+
+        std::string sql = "UPDATE users SET first_name = $1, last_name = $2, phone = $3, address = $4, city = $5, state = $6, zip_code = $7, country = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9";
+        const char* paramValues[9] = {
+            currentUser.firstName.c_str(),
+            currentUser.lastName.c_str(),
+            currentUser.phone.c_str(),
+            currentUser.address.c_str(),
+            currentUser.city.c_str(),
+            currentUser.state.c_str(),
+            currentUser.zipCode.c_str(),
+            currentUser.country.c_str(),
+            currentUser.id.c_str()
+        };
+        PGresult* res = PQexecParams(dbConn, sql.c_str(), 9, nullptr, paramValues, nullptr, nullptr, 0);
+        PQclear(res);
+
+        if (!firstField) response << ",";
+        response << "\"updateProfile\":" << userToJson(currentUser, query);
+        firstField = false;
+    }
+
+    if (query.find("addToCart(") != std::string::npos && !currentUser.id.empty()) {
+        std::string bookIdStr = extractIntValue(query, "bookId");
+        std::string quantityStr = extractIntValue(query, "quantity");
+        int bookId = bookIdStr.empty() ? 0 : stoi(bookIdStr);
+        int quantity = quantityStr.empty() ? 1 : stoi(quantityStr);
+
+        std::cerr << "[ADDTOCART] user='" << currentUser.username << "', bookId=" << bookId << ", quantity=" << quantity << std::endl;
+
+        std::string cartId = "";
+        std::string userId = currentUser.id;
+        const char* cartParams[1] = {userId.c_str()};
+        PGresult* cartRes = PQexecParams(dbConn, "SELECT id FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+        if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+            cartId = PQgetvalue(cartRes, 0, 0);
+        } else {
+            const char* insertParams[1] = {userId.c_str()};
+            PGresult* insertRes = PQexecParams(dbConn, "INSERT INTO shopping_carts (user_id) VALUES ($1) RETURNING id", 1, nullptr, insertParams, nullptr, nullptr, 0);
+            if (PQresultStatus(insertRes) == PGRES_TUPLES_OK && PQntuples(insertRes) > 0) {
+                cartId = PQgetvalue(insertRes, 0, 0);
+            }
+            PQclear(insertRes);
+        }
+        PQclear(cartRes);
+
+        std::string sql = "INSERT INTO cart_items (cart_id, book_id, quantity) VALUES ($1, $2, $3) "
+                     "ON CONFLICT (cart_id, book_id) DO UPDATE SET quantity = cart_items.quantity + $3 "
+                     "RETURNING id";
+        std::string p1 = cartId;
+        std::string p2 = std::to_string(bookId);
+        std::string p3 = std::to_string(quantity);
+        const char* paramValues[3] = {p1.c_str(), p2.c_str(), p3.c_str()};
+        PGresult* res = PQexecParams(dbConn, sql.c_str(), 3, nullptr, paramValues, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            response << "\"addToCart\":{";
+            response << "\"success\":true,";
+            response << "\"message\":\"Item added to cart\"";
+            response << "}";
+        } else {
+            response << "\"addToCart\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Failed to add item to cart\"";
+            response << "}";
+        }
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("removeFromCart(") != std::string::npos && !currentUser.id.empty()) {
+        std::string bookIdStr = extractIntValue(query, "bookId");
+        int bookId = bookIdStr.empty() ? 0 : stoi(bookIdStr);
+
+        std::cerr << "[REMOVEFROMCART] user='" << currentUser.username << "', bookId=" << bookId << std::endl;
+
+        std::string cartId = "";
+        std::string userId = currentUser.id;
+        const char* cartParams[1] = {userId.c_str()};
+        PGresult* cartRes = PQexecParams(dbConn, "SELECT id FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+        if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+            cartId = PQgetvalue(cartRes, 0, 0);
+        }
+        PQclear(cartRes);
+
+        std::string sql = "DELETE FROM cart_items WHERE cart_id = $1 AND book_id = $2";
+        std::string p1 = cartId;
+        std::string p2 = std::to_string(bookId);
+        const char* paramValues[2] = {p1.c_str(), p2.c_str()};
+        PGresult* res = PQexecParams(dbConn, sql.c_str(), 2, nullptr, paramValues, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        response << "\"removeFromCart\":{";
+        response << "\"success\":true,";
+        response << "\"message\":\"Item removed from cart\"";
+        response << "}";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("createOrder(") != std::string::npos && !currentUser.id.empty()) {
+        std::cerr << "[CREATEORDER] user='" << currentUser.username << "'" << std::endl;
+        std::string cartId = "";
+        std::string userId = currentUser.id;
+        const char* cartParams[1] = {userId.c_str()};
+        PGresult* cartRes = PQexecParams(dbConn, "SELECT id FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+        if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+            cartId = PQgetvalue(cartRes, 0, 0);
+        }
+        PQclear(cartRes);
+
+        std::string orderNumber = "ORD-" + std::to_string(time(nullptr));
+
+        double subtotal = 0;
+        const char* cartParam[1] = {cartId.c_str()};
+        PGresult* itemsRes = PQexecParams(dbConn, "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
+                                                      "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                                          1, nullptr, cartParam, nullptr, nullptr, 0);
+        if (PQresultStatus(itemsRes) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(itemsRes);
+            for (int i = 0; i < rows; i++) {
+                double price = atof(PQgetvalue(itemsRes, i, 4));
+                int qty = atoi(PQgetvalue(itemsRes, i, 3));
+                subtotal += price * qty;
+            }
+        }
+        PQclear(itemsRes);
+
+        double tax = subtotal * 0.08;
+        double shipping = subtotal > 50 ? 0 : 5.99;
+        double total = subtotal + tax + shipping;
+
+        std::string sql = "INSERT INTO orders (user_id, order_number, status, subtotal, tax_amount, shipping_amount, total_amount, shipping_address, billing_address, payment_status) "
+                     "VALUES ($1, $2, 'pending', $3, $4, $5, $6, '123 Test St', '123 Test St', 'pending') RETURNING id";
+        const char* paramValues[6] = {userId.c_str(), orderNumber.c_str(),
+                                      std::to_string(subtotal).c_str(), std::to_string(tax).c_str(),
+                                      std::to_string(shipping).c_str(), std::to_string(total).c_str()};
+        PGresult* res = PQexecParams(dbConn, sql.c_str(), 6, nullptr, paramValues, nullptr, nullptr, 0);
+
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            std::string orderId = PQgetvalue(res, 0, 0);
+            std::cerr << "[CREATEORDER] created orderId='" << orderId << "', orderNumber='" << orderNumber << "', total=" << total << std::endl;
+            PGresult* itemsRes2 = PQexecParams(dbConn, "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
+                                                          "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                                              1, nullptr, cartParam, nullptr, nullptr, 0);
+            if (PQresultStatus(itemsRes2) == PGRES_TUPLES_OK) {
+                int rows = PQntuples(itemsRes2);
+                for (int i = 0; i < rows; i++) {
+                    double price = atof(PQgetvalue(itemsRes2, i, 4));
+                    int qty = atoi(PQgetvalue(itemsRes2, i, 3));
+                    std::string itemSql = "INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price) "
+                                      "VALUES ($1, $2, $3, $4, $5, $6, $7)";
+                    const char* itemParams[7] = {orderId.c_str(), PQgetvalue(itemsRes2, i, 0),
+                                                   PQgetvalue(itemsRes2, i, 1), PQgetvalue(itemsRes2, i, 2),
+                                                   PQgetvalue(itemsRes2, i, 3), PQgetvalue(itemsRes2, i, 4),
+                                                   std::to_string(price * qty).c_str()};
+                    PQexecParams(dbConn, itemSql.c_str(), 7, nullptr, itemParams, nullptr, nullptr, 0);
+                }
+            }
+            PQclear(itemsRes2);
+
+            PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
+
+            if (!firstField) response << ",";
+            response << "\"createOrder\":{";
+            response << "\"success\":true,";
+            response << "\"orderId\":\"" << orderId << "\",";
+            response << "\"orderNumber\":\"" << orderNumber << "\",";
+            response << "\"totalAmount\":" << total;
+            response << "}";
+            firstField = false;
+        }
+        PQclear(res);
+    }
+
+    if (query.find("purchaseCart(") != std::string::npos && !currentUser.id.empty()) {
+        std::string cardNumber = extractValue(query, "cardNumber");
+        std::string expiry = extractValue(query, "expiry");
+        std::string cvv = extractValue(query, "cvv");
+
+        std::cerr << "[PURCHASECART] user='" << currentUser.username << "', cardNumber='" << cardNumber << "'" << std::endl;
+
+        if (cardNumber.empty() || expiry.empty() || cvv.empty()) {
+            if (!firstField) response << ",";
+            response << "\"purchaseCart\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"cardNumber, expiry, and cvv are required\"";
+            response << "}";
+            firstField = false;
+        } else {
+            std::string cartId = "";
+            std::string userId = currentUser.id;
+            const char* cartParams[1] = {userId.c_str()};
+            PGresult* cartRes = PQexecParams(dbConn, "SELECT id FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+            if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+                cartId = PQgetvalue(cartRes, 0, 0);
+            }
+            PQclear(cartRes);
+
+            if (cartId.empty()) {
+                if (!firstField) response << ",";
+                response << "\"purchaseCart\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"No active cart found for user\"";
+                response << "}";
+                firstField = false;
+            } else {
+                struct PurchaseItemLine {
+                    std::string bookId;
+                    std::string title;
+                    std::string isbn;
+                    int quantity;
+                    double price;
+                };
+
+                std::vector<PurchaseItemLine> purchaseItems;
+                double subtotal = 0;
+                const char* cartParam[1] = {cartId.c_str()};
+                PGresult* itemsRes = PQexecParams(dbConn,
+                    "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
+                    "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                    1, nullptr, cartParam, nullptr, nullptr, 0);
+                if (PQresultStatus(itemsRes) == PGRES_TUPLES_OK) {
+                    int rows = PQntuples(itemsRes);
+                    for (int i = 0; i < rows; i++) {
+                        PurchaseItemLine line;
+                        line.bookId = PQgetvalue(itemsRes, i, 0);
+                        line.title = PQgetvalue(itemsRes, i, 1) ? PQgetvalue(itemsRes, i, 1) : "";
+                        line.isbn = PQgetvalue(itemsRes, i, 2) ? PQgetvalue(itemsRes, i, 2) : "";
+                        line.quantity = atoi(PQgetvalue(itemsRes, i, 3));
+                        line.price = atof(PQgetvalue(itemsRes, i, 4));
+                        subtotal += line.price * line.quantity;
+                        purchaseItems.push_back(line);
+                    }
+                }
+                PQclear(itemsRes);
+
+                if (purchaseItems.empty()) {
+                    if (!firstField) response << ",";
+                    response << "\"purchaseCart\":{";
+                    response << "\"success\":false,";
+                    response << "\"message\":\"Your cart is empty\"";
+                    response << "}";
+                    firstField = false;
+                } else {
+                    double tax = subtotal * 0.08;
+                    double shipping = subtotal > 50 ? 0 : 5.99;
+                    double total = subtotal + tax + shipping;
+
+                    std::string orderId = "order-" + std::to_string(time(nullptr)) + "-pay-" + std::to_string(rand());
+                    std::string orderNumber = "ORD-PAY-" + std::to_string(time(nullptr));
+                    std::string subtotalStr = std::to_string(subtotal);
+                    std::string taxStr = std::to_string(tax);
+                    std::string shippingStr = std::to_string(shipping);
+                    std::string totalStr = std::to_string(total);
+                    const char* orderParams[6] = {userId.c_str(), orderNumber.c_str(),
+                                                  subtotalStr.c_str(), taxStr.c_str(),
+                                                  shippingStr.c_str(), totalStr.c_str()};
+                    PGresult* orderRes = PQexecParams(dbConn,
+                        "INSERT INTO orders (user_id, order_number, status, subtotal, tax_amount, shipping_amount, total_amount, shipping_address, billing_address, payment_status) "
+                        "VALUES ($1, $2, 'pending', $3, $4, $5, $6, '123 Test St', '123 Test St', 'pending') RETURNING id",
+                        6, nullptr, orderParams, nullptr, nullptr, 0);
+
+                    if (PQresultStatus(orderRes) == PGRES_TUPLES_OK && PQntuples(orderRes) > 0) {
+                        std::string orderId = PQgetvalue(orderRes, 0, 0);
+                        std::cerr << "[PURCHASECART] order created, orderId='" << orderId << "', total=" << total << std::endl;
+                        for (size_t i = 0; i < purchaseItems.size(); i++) {
+                            const auto& item = purchaseItems[i];
+                            std::string qtyStr = std::to_string(item.quantity);
+                            std::string priceStr = std::to_string(item.price);
+                            std::string totalLineStr = std::to_string(item.price * item.quantity);
+                            const char* itemParams[7] = {orderId.c_str(), item.bookId.c_str(),
+                                                          item.title.c_str(), item.isbn.c_str(), qtyStr.c_str(),
+                                                          priceStr.c_str(), totalLineStr.c_str()};
+                            PGresult* itemInsertRes = PQexecParams(dbConn,
+                                "INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price) "
+                                "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                                7, nullptr, itemParams, nullptr, nullptr, 0);
+                            PQclear(itemInsertRes);
+                        }
+
+                        PGresult* clearCartRes = PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
+                        PQclear(clearCartRes);
+
+                        std::string paymentResult = processPayment(userId, orderId, total, cardNumber, expiry, cvv);
+
+                        if (!firstField) response << ",";
+                        response << "\"purchaseCart\":{";
+                        response << "\"success\":true,";
+                        response << "\"orderId\":\"" << orderId << "\",";
+                        response << "\"totalAmount\":" << total << ",";
+                        response << "\"payment\":" << paymentResult;
+                        response << "}";
+                        firstField = false;
+                    } else {
+                        if (!firstField) response << ",";
+                        response << "\"purchaseCart\":{";
+                        response << "\"success\":false,";
+                        response << "\"message\":\"Unable to create order for purchase\"";
+                        response << "}";
+                        firstField = false;
+                    }
+                    PQclear(orderRes);
+                }
+            }
+        }
+    }
+
+    if (query.find("cancelOrder(") != std::string::npos && !currentUser.id.empty()) {
+        std::string orderId = extractValue(query, "orderId");
+        std::string targetOrderId = orderId;
+
+        std::cerr << "[CANCELORDER] user='" << currentUser.username << "', orderId='" << orderId << "'" << std::endl;
+
+        const char* params[1] = {targetOrderId.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id FROM orders WHERE id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            std::string actualUserId = PQgetvalue(res, 0, 1);
+            if (actualUserId == currentUser.id || currentUser.role == "admin" || currentUser.role == "staff") {
+                PQexecParams(dbConn, "UPDATE orders SET status = 'cancelled', payment_status = 'refunded' WHERE id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+                std::cerr << "[CANCELORDER] order '" << orderId << "' cancelled successfully" << std::endl;
+                response << "\"cancelOrder\":{";
+                response << "\"success\":true,";
+                response << "\"message\":\"Order cancelled successfully\"";
+                response << "}";
+            } else {
+                response << "\"cancelOrder\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"You can only cancel your own orders\"";
+                response << "}";
+            }
+        } else {
+            response << "\"cancelOrder\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Order not found\"";
+            response << "}";
+        }
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("createReview(") != std::string::npos && !currentUser.id.empty()) {
+        std::string bookIdStr = extractIntValue(query, "bookId");
+        std::string ratingStr = extractIntValue(query, "rating");
+        std::string comment = extractValue(query, "comment");
+        int bookId = bookIdStr.empty() ? 0 : stoi(bookIdStr);
+        int rating = ratingStr.empty() ? 5 : stoi(ratingStr);
+
+        std::cerr << "[CREATEREVIEW] user='" << currentUser.username << "', bookId=" << bookId << ", rating=" << rating << std::endl;
+
+        std::string sql = "INSERT INTO reviews (user_id, book_id, rating, comment, is_verified_purchase) "
+                     "VALUES ($1, $2, $3, $4, true) ON CONFLICT (user_id, book_id) DO UPDATE SET rating = $3, comment = $4 RETURNING id";
+        const char* paramValues[4] = {currentUser.id.c_str(), std::to_string(bookId).c_str(),
+                                      std::to_string(rating).c_str(), comment.c_str()};
+        PGresult* res = PQexecParams(dbConn, sql.c_str(), 4, nullptr, paramValues, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            response << "\"createReview\":{";
+            response << "\"success\":true,";
+            response << "\"message\":\"Review created successfully\"";
+            response << "}";
+        } else {
+            response << "\"createReview\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Failed to create review\"";
+            response << "}";
+        }
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("deleteReview(") != std::string::npos && !currentUser.id.empty()) {
+        std::string reviewId = extractValue(query, "reviewId");
+        std::string targetReviewId = reviewId;
+
+        std::cerr << "[DELETEREVIEW] user='" << currentUser.username << "', reviewId='" << reviewId << "'" << std::endl;
+
+        const char* params[1] = {targetReviewId.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id FROM reviews WHERE id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            std::string actualUserId = PQgetvalue(res, 0, 1);
+            if (actualUserId == currentUser.id || currentUser.role == "admin" || currentUser.role == "staff") {
+                PQexecParams(dbConn, "DELETE FROM reviews WHERE id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+                std::cerr << "[DELETEREVIEW] review '" << reviewId << "' deleted successfully" << std::endl;
+                response << "\"deleteReview\":{";
+                response << "\"success\":true,";
+                response << "\"message\":\"Review deleted successfully\"";
+                response << "}";
+            } else {
+                response << "\"deleteReview\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"You can only delete your own reviews\"";
+                response << "}";
+            }
+        } else {
+            response << "\"deleteReview\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Review not found\"";
+            response << "}";
+        }
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("registerWebhook(") != std::string::npos && !currentUser.id.empty()) {
+        std::string url = extractValue(query, "url");
+        std::string events = extractValue(query, "events");
+        std::string secret = extractValue(query, "secret");
+
+        std::cerr << "[REGISTERWEBHOOK] user='" << currentUser.username << "', url='" << url << "'" << std::endl;
+
+        if (!url.empty()) {
+            std::string eventsJson;
+            if (events.empty()) {
+                eventsJson = "[\"*\"]";
+            } else if (events[0] == '[') {
+                eventsJson = events;
+            } else {
+                eventsJson = "[";
+                size_t start = 0;
+                size_t pos = events.find(',');
+                while (pos != std::string::npos) {
+                    eventsJson += "\"" + events.substr(start, pos - start) + "\",";
+                    start = pos + 1;
+                    pos = events.find(',', start);
+                }
+                eventsJson += "\"" + events.substr(start) + "\"]";
+            }
+
+            std::string sql = "INSERT INTO webhooks (user_id, url, events, secret) VALUES ($1, $2, $3::jsonb, $4) RETURNING id";
+            const char* paramValues[4] = {currentUser.id.c_str(), url.c_str(),
+                                         eventsJson.c_str(),
+                                         secret.empty() ? "default_secret" : secret.c_str()};
+            PGresult* res = PQexecParams(dbConn, sql.c_str(), 4, nullptr, paramValues, nullptr, nullptr, 0);
+
+            if (!firstField) response << ",";
+            if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+                std::string webhookId = PQgetvalue(res, 0, 0);
+                std::cerr << "[REGISTERWEBHOOK] webhook created, id='" << webhookId << "'" << std::endl;
+                response << "\"registerWebhook\":{";
+                response << "\"success\":true,";
+                response << "\"webhookId\":\"" << webhookId << "\"";
+                response << "}";
+            } else {
+                response << "\"registerWebhook\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"Failed to register webhook\"";
+                response << "}";
+            }
+            firstField = false;
+            PQclear(res);
+        } else {
+            if (!firstField) response << ",";
+            response << "\"registerWebhook\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"URL is required\"";
+            response << "}";
+            firstField = false;
+        }
+    }
+
+    if (query.find("testWebhook(") != std::string::npos && !currentUser.id.empty()) {
+        std::string webhookId = extractValue(query, "webhookId");
+        std::string targetWebhookId = webhookId;
+
+        std::cerr << "[TESTWEBHOOK] user='" << currentUser.username << "', webhookId='" << webhookId << "'" << std::endl;
+
+        const char* params[1] = {targetWebhookId.c_str()};
+        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, url, secret FROM webhooks WHERE id = $1 AND is_active = true", 1, nullptr, params, nullptr, nullptr, 0);
+
+        if (!firstField) response << ",";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            std::string actualUserId = PQgetvalue(res, 0, 1);
+            if (actualUserId == currentUser.id || currentUser.role == "admin" || currentUser.role == "staff") {
+                std::string url = PQgetvalue(res, 0, 2);
+                std::string secret = PQgetvalue(res, 0, 3);
+
+                std::string testPayload = "{\"event\":\"test\",\"timestamp\":\"" + std::to_string(time(nullptr)) + "\",\"secret\":\"" + secret + "\"}";
+                std::string responseBody;
+                bool success = fetchURL(url, responseBody);
+
+                if (success) {
+                    std::cerr << "[TESTWEBHOOK] webhook triggered successfully" << std::endl;
+                    response << "\"testWebhook\":{";
+                    response << "\"success\":true,";
+                    response << "\"message\":\"Webhook triggered successfully\",";
+                    response << "\"response\":\"" << escapeJson(responseBody) << "\"";
+                    response << "}";
+                } else {
+                    response << "\"testWebhook\":{";
+                    response << "\"success\":false,";
+                    response << "\"message\":\"Failed to trigger webhook\"";
+                    response << "}";
+                }
+            } else {
+                response << "\"testWebhook\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"You can only test your own webhooks\"";
+                response << "}";
+            }
+        } else {
+            response << "\"testWebhook\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"Webhook not found or inactive\"";
+            response << "}";
+        }
+        firstField = false;
+        PQclear(res);
+    }
+
+    response << "}}";
+    return response.str();
+}
+
+User extractAuthUser(const std::string& authHeader) {
+    if (authHeader.empty()) {
+        return User();
+    }
+    
+    std::string token = authHeader;
+    if (token.find("Bearer ") == 0) {
+        token = token.substr(7);
+    }
+    
+    return verifyJWT(token);
+}
+
+std::string handleRequest(const std::string& query, User& currentUser, bool isMutation) {
+    if (query.empty()) {
+        return "{\"errors\":[{\"message\":\"Empty query\"}]}";
+    }
+    
+    if (isMutation) {
+        return handleMutation(query, currentUser);
+    } else {
+        return handleQuery(query, currentUser);
+    }
+}
