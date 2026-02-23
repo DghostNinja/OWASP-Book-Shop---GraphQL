@@ -744,7 +744,118 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         response << "]";
         firstField = false;
         PQclear(res);
-    } else if (query.find("testWebhook(") != std::string::npos) {
+    }
+
+    if (query.find("_adminStats") != std::string::npos) {
+        std::cerr << "[QUERY] _adminStats" << std::endl;
+        PGresult* res = PQexec(dbConn, "SELECT "
+            "(SELECT COUNT(*) FROM users) as user_count, "
+            "(SELECT COUNT(*) FROM books) as book_count, "
+            "(SELECT COUNT(*) FROM orders) as order_count, "
+            "(SELECT SUM(total_amount) FROM orders) as total_revenue, "
+            "(SELECT COUNT(*) FROM reviews) as review_count");
+
+        if (!firstField) response << ",";
+        response << "\"_adminStats\":{";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+            response << "\"userCount\":" << (PQgetvalue(res, 0, 0) ? PQgetvalue(res, 0, 0) : "0") << ",";
+            response << "\"bookCount\":" << (PQgetvalue(res, 0, 1) ? PQgetvalue(res, 0, 1) : "0") << ",";
+            response << "\"orderCount\":" << (PQgetvalue(res, 0, 2) ? PQgetvalue(res, 0, 2) : "0") << ",";
+            response << "\"totalRevenue\":" << (PQgetvalue(res, 0, 3) ? PQgetvalue(res, 0, 3) : "0") << ",";
+            response << "\"reviewCount\":" << (PQgetvalue(res, 0, 4) ? PQgetvalue(res, 0, 4) : "0");
+        } else {
+            response << "\"error\":\"Failed to load stats\"";
+        }
+        response << "}";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_adminAllOrders") != std::string::npos) {
+        std::cerr << "[QUERY] _adminAllOrders" << std::endl;
+        PGresult* res = PQexec(dbConn, "SELECT id, user_id, order_number, status, total_amount, payment_status, created_at FROM orders ORDER BY created_at DESC LIMIT 100");
+
+        if (!firstField) response << ",";
+        response << "\"_adminAllOrders\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                response << "{\"id\":\"" << PQgetvalue(res, i, 0) << "\",";
+                response << "\"userId\":\"" << PQgetvalue(res, i, 1) << "\",";
+                response << "\"orderNumber\":\"" << PQgetvalue(res, i, 2) << "\",";
+                response << "\"status\":\"" << PQgetvalue(res, i, 3) << "\",";
+                response << "\"totalAmount\":" << PQgetvalue(res, i, 4) << ",";
+                response << "\"paymentStatus\":\"" << PQgetvalue(res, i, 5) << "\",";
+                response << "\"createdAt\":\"" << PQgetvalue(res, i, 6) << "\"}";
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_adminAllPayments") != std::string::npos) {
+        std::cerr << "[QUERY] _adminAllPayments" << std::endl;
+        PGresult* res = PQexec(dbConn, "SELECT id, order_id, user_id, amount, status, transaction_id, created_at FROM payment_transactions ORDER BY created_at DESC LIMIT 100");
+
+        if (!firstField) response << ",";
+        response << "\"_adminAllPayments\":[";
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                response << "{\"id\":\"" << PQgetvalue(res, i, 0) << "\",";
+                response << "\"orderId\":\"" << PQgetvalue(res, i, 1) << "\",";
+                response << "\"userId\":\"" << PQgetvalue(res, i, 2) << "\",";
+                response << "\"amount\":" << PQgetvalue(res, i, 3) << ",";
+                response << "\"status\":\"" << PQgetvalue(res, i, 4) << "\",";
+                response << "\"transactionId\":\"" << (PQgetvalue(res, i, 5) ? PQgetvalue(res, i, 5) : "") << "\",";
+                response << "\"createdAt\":\"" << PQgetvalue(res, i, 6) << "\"}";
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("_searchAdvanced") != std::string::npos) {
+        std::string searchQuery = extractValue(query, "query");
+        std::cerr << "[QUERY] _searchAdvanced(query: \"" << searchQuery << "\")" << std::endl;
+
+        if (!firstField) response << ",";
+        response << "\"_searchAdvanced\":[";
+
+        std::string sql = "SELECT id, isbn, title, description, author_id, category_id, price, sale_price, stock_quantity FROM books WHERE is_active = true";
+        if (!searchQuery.empty()) {
+            sql += " AND (title ILIKE '%" + searchQuery + "%' OR description ILIKE '%" + searchQuery + "%' OR isbn = '" + searchQuery + "')";
+        }
+
+        PGresult* res = PQexec(dbConn, sql.c_str());
+
+        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            int rows = PQntuples(res);
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) response << ",";
+                Book book;
+                book.id = atoi(PQgetvalue(res, i, 0));
+                book.isbn = PQgetvalue(res, i, 1) ? PQgetvalue(res, i, 1) : "";
+                book.title = PQgetvalue(res, i, 2) ? PQgetvalue(res, i, 2) : "";
+                book.description = PQgetvalue(res, i, 3) ? PQgetvalue(res, i, 3) : "";
+                book.authorId = atoi(PQgetvalue(res, i, 4));
+                book.categoryId = atoi(PQgetvalue(res, i, 5));
+                book.price = atof(PQgetvalue(res, i, 6));
+                book.salePrice = PQgetvalue(res, i, 7) ? atof(PQgetvalue(res, i, 7)) : 0;
+                book.stockQuantity = atoi(PQgetvalue(res, i, 8));
+                response << bookToJson(book, query);
+            }
+        }
+        response << "]";
+        firstField = false;
+        PQclear(res);
+    }
+
+    if (query.find("testWebhook(") != std::string::npos) {
         if (!firstField) response << ",";
         response << "\"testWebhook\":{\"success\":false,\"message\":\"Authentication required\"}";
         firstField = false;
