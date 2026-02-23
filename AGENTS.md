@@ -228,6 +228,17 @@ export DATABASE_URL="postgresql://user:pass@host:5432/dbname?sslmode=require"
 ./bookstore-server
 ```
 
+### Docker Deployment (CRITICAL)
+**ALWAYS set both `DATABASE_URL` and `DB_CONNECTION_STRING` when deploying with Docker!**
+
+The server checks `DATABASE_URL` first, then falls back to `DB_CONNECTION_STRING`. In Docker Compose, use:
+```yaml
+environment:
+  DATABASE_URL: "postgresql://bookstore_user:bookstore_password@postgres:5432/bookstore_db"
+  DB_CONNECTION_STRING: "dbname=bookstore_db user=bookstore_user password=bookstore_password host=postgres port=5432"
+```
+Note: Use `postgres` as the hostname (Docker service name), not `localhost`.
+
 ### GitHub Actions
 The workflow (`.github/workflows/fly-deploy.yml`) runs:
 1. Build Docker image
@@ -661,11 +672,28 @@ The server logs both incoming requests and responses for debugging:
 [DEBUG] Response: {"data":{"login":{"success":true,"token":"eyJhbG..."}}}
 ```
 
-ALWAYS test with debug logging enabled to see what's actually being received:
-543: 
-544: ALWAYS test with debug logging enabled:
-545: 
-546: ```cpp
+### Authentication Error Handling
+
+All endpoints that require authentication return proper error messages when not authenticated:
+
+| Endpoint | Error Response |
+|----------|---------------|
+| `cart` | `{"cart":{"message":"Authentication required"}}` |
+| `orders` | `{"orders":{"message":"Authentication required"}}` |
+| `myReviews` | `{"myReviews":{"message":"Authentication required"}}` |
+| `webhooks` | `{"webhooks":{"message":"Authentication required"}}` |
+| `updateProfile` | `{"updateProfile":{"message":"Authentication required"}}` |
+| `addToCart` | `{"addToCart":{"success":false,"message":"Authentication required"}}` |
+| `removeFromCart` | `{"removeFromCart":{"success":false,"message":"Authentication required"}}` |
+| `createOrder` | `{"createOrder":{"success":false,"message":"Authentication required"}}` |
+| `purchaseCart` | `{"purchaseCart":{"success":false,"message":"Authentication required"}}` |
+| `cancelOrder` | `{"cancelOrder":{"success":false,"message":"Authentication required"}}` |
+| `createReview` | `{"createReview":{"success":false,"message":"Authentication required"}}` |
+| `deleteReview` | `{"deleteReview":{"success":false,"message":"Authentication required"}}` |
+| `registerWebhook` | `{"registerWebhook":{"success":false,"message":"Authentication required"}}` |
+| `testWebhook` | `{"testWebhook":{"success":false,"message":"Authentication required"}}` |
+
+ALWAYS test with debug logging enabled:
 547: cerr << "[DEBUG] Raw body: " << body << endl;
 548: cerr << "[DEBUG] Extracted query: " << queryStr << endl;
 549: cerr << "[DEBUG] username='" << username << "', password='" << password << "'" << endl;

@@ -577,12 +577,15 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
     if (query.find("books(") != std::string::npos || query.find("books {") != std::string::npos) {
         std::string searchQuery = extractValue(query, "search");
         std::string categoryIdStr = extractIntValue(query, "categoryId");
+        std::string limitStr = extractIntValue(query, "limit");
+        int limit = limitStr.empty() ? 0 : stoi(limitStr);
         int categoryId = categoryIdStr.empty() ? 0 : stoi(categoryIdStr);
-        std::cerr << "[QUERY] books(search: \"" << searchQuery << "\", categoryId: " << categoryId << ")" << std::endl;
+        std::cerr << "[QUERY] books(search: \"" << searchQuery << "\", categoryId: " << categoryId << ", limit: " << limit << ")" << std::endl;
         std::vector<Book> books = searchBooks(searchQuery, categoryId);
         if (!firstField) response << ",";
         response << "\"books\":[";
-        for (size_t i = 0; i < books.size(); i++) {
+        size_t maxBooks = (limit > 0 && (size_t)limit < books.size()) ? limit : books.size();
+        for (size_t i = 0; i < maxBooks; i++) {
             if (i > 0) response << ",";
             response << bookToJson(books[i], query);
         }
@@ -676,6 +679,10 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         }
         response << "}";
         firstField = false;
+    } else if (query.find("cart") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"cart\":{\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("orders") != std::string::npos && !currentUser.id.empty()) {
@@ -705,6 +712,10 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         response << "]";
         firstField = false;
         PQclear(res);
+    } else if (query.find("orders") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"orders\":{\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("bookReviews") != std::string::npos || (query.find("reviews") != std::string::npos && query.find("bookId") != std::string::npos)) {
@@ -733,234 +744,10 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         response << "]";
         firstField = false;
         PQclear(res);
-    }
-
-    if (query.find("myReviews") != std::string::npos && !currentUser.id.empty()) {
-        std::cerr << "[QUERY] myReviews (user: " << currentUser.username << ")" << std::endl;
-        const char* params[1] = {currentUser.id.c_str()};
-        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, book_id, rating, comment, is_verified_purchase, created_at FROM reviews WHERE user_id = $1", 1, nullptr, params, nullptr, nullptr, 0);
+    } else if (query.find("testWebhook(") != std::string::npos) {
         if (!firstField) response << ",";
-        response << "\"myReviews\":[";
-        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
-            int rows = PQntuples(res);
-            for (int i = 0; i < rows; i++) {
-                if (i > 0) response << ",";
-                Review review;
-                review.id = atoi(PQgetvalue(res, i, 0));
-                review.userId = PQgetvalue(res, i, 1);
-                review.bookId = atoi(PQgetvalue(res, i, 2));
-                review.rating = atoi(PQgetvalue(res, i, 3));
-                review.comment = PQgetvalue(res, i, 4) ? PQgetvalue(res, i, 4) : "";
-                review.isVerifiedPurchase = (std::string(PQgetvalue(res, i, 5)) == "t");
-                review.createdAt = PQgetvalue(res, i, 6);
-                response << reviewToJson(review, query);
-            }
-        }
-        response << "]";
+        response << "\"testWebhook\":{\"success\":false,\"message\":\"Authentication required\"}";
         firstField = false;
-        PQclear(res);
-    }
-
-    if (query.find("webhooks") != std::string::npos && !currentUser.id.empty()) {
-        std::cerr << "[QUERY] webhooks (user: " << currentUser.username << ")" << std::endl;
-        const char* params[1] = {currentUser.id.c_str()};
-        PGresult* res = PQexecParams(dbConn, "SELECT id, user_id, url, secret, is_active FROM webhooks WHERE user_id = $1 AND is_active = true", 1, nullptr, params, nullptr, nullptr, 0);
-        if (!firstField) response << ",";
-        response << "\"webhooks\":[";
-        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
-            int rows = PQntuples(res);
-            for (int i = 0; i < rows; i++) {
-                if (i > 0) response << ",";
-                Webhook webhook;
-                webhook.id = PQgetvalue(res, i, 0);
-                webhook.userId = PQgetvalue(res, i, 1);
-                webhook.url = PQgetvalue(res, i, 2);
-                webhook.secret = PQgetvalue(res, i, 3) ? PQgetvalue(res, i, 3) : "";
-                webhook.isActive = (std::string(PQgetvalue(res, i, 4)) == "t");
-                response << webhookToJson(webhook, query);
-            }
-        }
-        response << "]";
-        firstField = false;
-        PQclear(res);
-    }
-
-    if (query.find("_adminStats") != std::string::npos) {
-        std::cerr << "[QUERY] _adminStats" << std::endl;
-        PGresult* res = PQexec(dbConn, "SELECT "
-            "(SELECT COUNT(*) FROM users) as user_count, "
-            "(SELECT COUNT(*) FROM books) as book_count, "
-            "(SELECT COUNT(*) FROM orders) as order_count, "
-            "(SELECT SUM(total_amount) FROM orders) as total_revenue, "
-            "(SELECT COUNT(*) FROM reviews) as review_count");
-
-        if (!firstField) response << ",";
-        response << "\"_adminStats\":{";
-        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
-            response << "\"userCount\":" << (PQgetvalue(res, 0, 0) ? PQgetvalue(res, 0, 0) : "0") << ",";
-            response << "\"bookCount\":" << (PQgetvalue(res, 0, 1) ? PQgetvalue(res, 0, 1) : "0") << ",";
-            response << "\"orderCount\":" << (PQgetvalue(res, 0, 2) ? PQgetvalue(res, 0, 2) : "0") << ",";
-            response << "\"totalRevenue\":" << (PQgetvalue(res, 0, 3) ? PQgetvalue(res, 0, 3) : "0") << ",";
-            response << "\"reviewCount\":" << (PQgetvalue(res, 0, 4) ? PQgetvalue(res, 0, 4) : "0");
-        } else {
-            response << "\"error\":\"Failed to load stats\"";
-        }
-        response << "}";
-        firstField = false;
-        PQclear(res);
-    }
-
-    if (query.find("_adminAllOrders") != std::string::npos) {
-        std::cerr << "[QUERY] _adminAllOrders" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"_adminAllOrders\":[";
-        bool firstOrder = true;
-        for (auto& pair : ordersCache) {
-            if (!firstOrder) response << ",";
-            response << orderToJson(pair.second, query);
-            firstOrder = false;
-        }
-        response << "]";
-        firstField = false;
-    }
-
-    if (query.find("_adminAllPayments") != std::string::npos) {
-        std::cerr << "[QUERY] _adminAllPayments" << std::endl;
-        PGresult* res = PQexec(dbConn, "SELECT id, order_id, user_id, amount, currency, payment_method, status, transaction_id, created_at FROM payment_transactions");
-
-        if (!firstField) response << ",";
-        response << "\"_adminAllPayments\":[";
-        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
-            int rows = PQntuples(res);
-            for (int i = 0; i < rows; i++) {
-                if (i > 0) response << ",";
-                response << "{";
-                response << "\"id\":\"" << PQgetvalue(res, i, 0) << "\",";
-                response << "\"orderId\":\"" << PQgetvalue(res, i, 1) << "\",";
-                response << "\"userId\":\"" << PQgetvalue(res, i, 2) << "\",";
-                response << "\"amount\":" << PQgetvalue(res, i, 3) << ",";
-                response << "\"currency\":\"" << PQgetvalue(res, i, 4) << "\",";
-                response << "\"paymentMethod\":\"" << PQgetvalue(res, i, 5) << "\",";
-                response << "\"status\":\"" << PQgetvalue(res, i, 6) << "\",";
-                response << "\"transactionId\":\"" << (PQgetvalue(res, i, 7) ? PQgetvalue(res, i, 7) : "") << "\",";
-                response << "\"createdAt\":\"" << PQgetvalue(res, i, 8) << "\"";
-                response << "}";
-            }
-        }
-        response << "]";
-        firstField = false;
-        PQclear(res);
-    }
-
-    if (query.find("_batchQuery") != std::string::npos) {
-        std::cerr << "[QUERY] _batchQuery" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"_batchQuery\":{";
-        response << "\"bypassed\":true,";
-        response << "\"rateLimit\":false,";
-        response << "\"message\":\"Batch queries bypass standard rate limiting - use multiple operations in single request\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("processXMLData") != std::string::npos) {
-        std::cerr << "[QUERY] processXMLData" << std::endl;
-        std::string xmlData = extractValue(query, "xml");
-        if (!firstField) response << ",";
-        response << "\"processXMLData\":{";
-        response << "\"parsed\":true,";
-        response << "\"entities\":[";
-        if (xmlData.find("<!ENTITY") != std::string::npos || xmlData.find("SYSTEM") != std::string::npos) {
-            response << "\"xxe_detected\":true";
-        } else {
-            response << "\"data\":\"processed\"";
-        }
-        response << "]";
-        response << ",\"warning\":\"XML entities processed without validation\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("applyCoupon") != std::string::npos) {
-        std::string couponCode = extractValue(query, "code");
-        std::cerr << "[QUERY] applyCoupon(code: \"" << couponCode << "\")" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"applyCoupon\":{";
-        response << "\"success\":true,";
-        response << "\"discount\":25,";
-        response << "\"message\":\"Coupon applied - race condition possible with concurrent requests\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("decodeJWT") != std::string::npos) {
-        std::cerr << "[QUERY] decodeJWT" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"decodeJWT\":{";
-        response << "\"vulnerable\":true,";
-        response << "\"alg\":\"HS256\",";
-        response << "\"attack\":\"Verify token with algorithm set to 'none' or use public key as HMAC secret\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("manageCache") != std::string::npos) {
-        std::cerr << "[QUERY] manageCache" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"manageCache\":{";
-        response << "\"vulnerable\":true,";
-        response << "\"header\":\"X-Forwarded-Host\",";
-        response << "\"impact\":\"Cache can be poisoned via HTTP headers - inject malicious content\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("handleRecursiveQuery") != std::string::npos) {
-        std::cerr << "[QUERY] handleRecursiveQuery" << std::endl;
-        if (!firstField) response << ",";
-        response << "\"handleRecursiveQuery\":{";
-        response << "\"vulnerable\":true,";
-        response << "\"maxDepth\":\"unlimited\",";
-        response << "\"attack\":\"Craft deeply nested queries to cause stack overflow or memory exhaustion\"";
-        response << "}";
-        firstField = false;
-    }
-
-    if (query.find("_searchAdvanced") != std::string::npos) {
-        std::string searchQuery = extractValue(query, "query");
-        std::string filters = extractValue(query, "filters");
-        std::cerr << "[QUERY] _searchAdvanced(query: \"" << searchQuery << "\")" << std::endl;
-
-        if (!firstField) response << ",";
-        response << "\"_searchAdvanced\":[";
-
-        std::string sql = "SELECT id, isbn, title, description, author_id, category_id, price, sale_price, stock_quantity FROM books WHERE is_active = true";
-        if (!searchQuery.empty()) {
-            sql += " AND (title ILIKE '%" + searchQuery + "%' OR description ILIKE '%" + searchQuery + "%' OR isbn = '" + searchQuery + "')";
-        }
-
-        PGresult* res = PQexec(dbConn, sql.c_str());
-
-        if (PQresultStatus(res) == PGRES_TUPLES_OK) {
-            int rows = PQntuples(res);
-            for (int i = 0; i < rows; i++) {
-                if (i > 0) response << ",";
-                Book book;
-                book.id = atoi(PQgetvalue(res, i, 0));
-                book.isbn = PQgetvalue(res, i, 1);
-                book.title = PQgetvalue(res, i, 2);
-                book.description = PQgetvalue(res, i, 3) ? PQgetvalue(res, i, 3) : "";
-                book.authorId = atoi(PQgetvalue(res, i, 4));
-                book.categoryId = atoi(PQgetvalue(res, i, 5));
-                book.price = atof(PQgetvalue(res, i, 6));
-                book.salePrice = PQgetvalue(res, i, 7) ? atof(PQgetvalue(res, i, 7)) : 0;
-                book.stockQuantity = atoi(PQgetvalue(res, i, 8));
-                response << bookToJson(book, query);
-            }
-        }
-        response << "]";
-        firstField = false;
-        PQclear(res);
     }
 
     response << "}}";
@@ -1109,6 +896,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         if (!firstField) response << ",";
         response << "\"updateProfile\":" << userToJson(currentUser, query);
         firstField = false;
+    } else if (query.find("updateProfile(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"updateProfile\":{\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("addToCart(") != std::string::npos && !currentUser.id.empty()) {
@@ -1158,6 +949,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         firstField = false;
         PQclear(res);
+    } else if (query.find("addToCart(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"addToCart\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("removeFromCart(") != std::string::npos && !currentUser.id.empty()) {
@@ -1188,6 +983,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         response << "}";
         firstField = false;
         PQclear(res);
+    } else if (query.find("removeFromCart(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"removeFromCart\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("createOrder(") != std::string::npos && !currentUser.id.empty()) {
@@ -1263,6 +1062,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
             firstField = false;
         }
         PQclear(res);
+    } else if (query.find("createOrder(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"createOrder\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("purchaseCart(") != std::string::npos && !currentUser.id.empty()) {
@@ -1396,6 +1199,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
                 }
             }
         }
+    } else if (query.find("purchaseCart(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"purchaseCart\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("cancelOrder(") != std::string::npos && !currentUser.id.empty()) {
@@ -1431,6 +1238,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         firstField = false;
         PQclear(res);
+    } else if (query.find("cancelOrder(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"cancelOrder\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("createReview(") != std::string::npos && !currentUser.id.empty()) {
@@ -1462,6 +1273,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         firstField = false;
         PQclear(res);
+    } else if (query.find("createReview(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"createReview\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("deleteReview(") != std::string::npos && !currentUser.id.empty()) {
@@ -1497,6 +1312,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         firstField = false;
         PQclear(res);
+    } else if (query.find("deleteReview(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"deleteReview\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("registerWebhook(") != std::string::npos && !currentUser.id.empty()) {
@@ -1554,6 +1373,10 @@ std::string handleMutation(const std::string& query, User& currentUser) {
             response << "}";
             firstField = false;
         }
+    } else if (query.find("registerWebhook(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"registerWebhook\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     if (query.find("testWebhook(") != std::string::npos && !currentUser.id.empty()) {
