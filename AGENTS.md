@@ -451,7 +451,7 @@ mutation { createOrder() { success orderId } }
 | `checkout(cardNumber, expiry, cvv)` | Create order and process payment | Yes |\n| `purchaseCart(cardNumber, expiry, cvv)` | Charge vulnbank card for cart items | Yes |\n| `cancelOrder(orderId)` | Cancel an order | Yes |\n| `createReview(bookId, rating, comment)` | Create a review | Yes |\n| `deleteReview(reviewId)` | Delete a review | Yes |\n| `registerWebhook(url, events, secret)` | Register a webhook URL | Yes |\n| `testWebhook(webhookId)` | Test a webhook | Yes |\n
 ### Recent Features Added
 - **Field Selection**: All queries now return only requested fields (e.g., `{ books { id title } }` returns only id and title)
-- **JWT Enhancements**: Tokens now include `iat` (issued at) and `exp` (expires in 6 hours)
+- **JWT Enhancements**: Tokens now include `iat` (issued at) and `exp` (expires in 6 hours), with proper expiration validation
 - **Nested Author Field**: Books can include author details via `author { firstName lastName }`
 - **Authors Cache**: Authors are loaded at startup for nested queries
 - **Shopping Cart System**: Full cart functionality with add/remove items

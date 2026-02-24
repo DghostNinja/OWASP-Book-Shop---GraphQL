@@ -86,6 +86,19 @@ User verifyJWT(const std::string& token) {
         return user;
     }
 
+    // Check expiration time
+    time_t exp = jwt_get_grant_int(jwt, "exp");
+    if (exp == 0) {
+        jwt_free(jwt);
+        return user;
+    }
+
+    time_t now = time(nullptr);
+    if (now >= exp) {
+        jwt_free(jwt);
+        return user;
+    }
+
     user.id = jwt_get_grant(jwt, "sub");
     user.username = jwt_get_grant(jwt, "username");
     user.role = jwt_get_grant(jwt, "role");
