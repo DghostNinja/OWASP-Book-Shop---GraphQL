@@ -100,6 +100,7 @@ type Mutation {
     
     # Order mutations
     createOrder(input: OrderInput!): Order!
+    checkout(cardNumber: String!, expiry: String!, cvv: String!): CheckoutResult!
     cancelOrder(orderId: ID!, reason: String): Order!
     requestRefund(orderId: ID!, reason: String, items: [RefundItemInput!]): RefundRequest!
     updateOrderStatus(orderId: ID!, status: String!): Order!
@@ -242,6 +243,15 @@ type CartItem {
     price: Float!
     total: Float!
     addedAt: String!
+}
+
+type CheckoutResult {
+    success: Boolean!
+    orderId: String
+    orderNumber: String
+    totalAmount: Float
+    message: String
+    payment: String
 }
 
 type Order {

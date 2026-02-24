@@ -172,67 +172,78 @@ bool isFieldRequested(const std::string& query, const std::string& fieldName) {
     return false;
 }
 
+bool hasAnyUserField(const std::string& query) {
+    return isFieldRequested(query, "id") || isFieldRequested(query, "username") ||
+           isFieldRequested(query, "firstName") || isFieldRequested(query, "lastName") ||
+           isFieldRequested(query, "role") || isFieldRequested(query, "phone") ||
+           isFieldRequested(query, "address") || isFieldRequested(query, "city") ||
+           isFieldRequested(query, "state") || isFieldRequested(query, "zipCode") ||
+           isFieldRequested(query, "country") || isFieldRequested(query, "email") ||
+           isFieldRequested(query, "isActive") || isFieldRequested(query, "lastLogin");
+}
+
 // JSON Conversion Functions
 std::string userToJson(const User& user, const std::string& query) {
     std::stringstream ss;
     ss << "{";
     bool firstField = true;
-    if (query.empty() || isFieldRequested(query, "id")) {
+    bool includeAll = query.empty() || !hasAnyUserField(query);
+    if (includeAll || isFieldRequested(query, "id")) {
         ss << "\"id\":\"" << user.id << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "username")) {
+    if (includeAll || isFieldRequested(query, "username")) {
         if (!firstField) ss << ",";
         ss << "\"username\":\"" << escapeJson(user.username) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "firstName")) {
+    if (includeAll || isFieldRequested(query, "firstName")) {
         if (!firstField) ss << ",";
         ss << "\"firstName\":\"" << escapeJson(user.firstName) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "lastName")) {
+    if (includeAll || isFieldRequested(query, "lastName")) {
         if (!firstField) ss << ",";
         ss << "\"lastName\":\"" << escapeJson(user.lastName) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "role")) {
+    if (includeAll || isFieldRequested(query, "role")) {
         if (!firstField) ss << ",";
         ss << "\"role\":\"" << escapeJson(user.role) << "\"";
         firstField = false;
     }
 
-    if (query.empty() || isFieldRequested(query, "phone")) {
+    if (includeAll || isFieldRequested(query, "phone")) {
         if (!firstField) ss << ",";
         ss << "\"phone\":\"" << escapeJson(user.phone) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "address")) {
+    if (includeAll || isFieldRequested(query, "address")) {
         if (!firstField) ss << ",";
         ss << "\"address\":\"" << escapeJson(user.address) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "city")) {
+    if (includeAll || isFieldRequested(query, "city")) {
         if (!firstField) ss << ",";
         ss << "\"city\":\"" << escapeJson(user.city) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "state")) {
+    if (includeAll || isFieldRequested(query, "state")) {
         if (!firstField) ss << ",";
         ss << "\"state\":\"" << escapeJson(user.state) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "zipCode")) {
+    if (includeAll || isFieldRequested(query, "zipCode")) {
         if (!firstField) ss << ",";
         ss << "\"zipCode\":\"" << escapeJson(user.zipCode) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "country")) {
+    if (includeAll || isFieldRequested(query, "country")) {
         if (!firstField) ss << ",";
         ss << "\"country\":\"" << escapeJson(user.country) << "\"";
         firstField = false;
     }
-    if (query.empty() || isFieldRequested(query, "isActive")) {
+    if (includeAll || isFieldRequested(query, "isActive")) {
         if (!firstField) ss << ",";
         ss << "\"isActive\":" << (user.isActive ? "true" : "false");
         firstField = false;
@@ -526,6 +537,7 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         response << "{\"name\":\"addToCart\"},";
         response << "{\"name\":\"removeFromCart\"},";
         response << "{\"name\":\"createOrder\"},";
+        response << "{\"name\":\"checkout\"},";
         response << "{\"name\":\"purchaseCart\"},";
         response << "{\"name\":\"cancelOrder\"},";
         response << "{\"name\":\"createReview\"},";
@@ -1255,13 +1267,14 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         std::string orderNumber = "ORD-" + std::to_string(time(nullptr));
 
         double subtotal = 0;
+        int itemCount = 0;
         const char* cartParam[1] = {cartId.c_str()};
         PGresult* itemsRes = PQexecParams(dbConn, "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
                                                       "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
                                           1, nullptr, cartParam, nullptr, nullptr, 0);
         if (PQresultStatus(itemsRes) == PGRES_TUPLES_OK) {
-            int rows = PQntuples(itemsRes);
-            for (int i = 0; i < rows; i++) {
+            itemCount = PQntuples(itemsRes);
+            for (int i = 0; i < itemCount; i++) {
                 double price = atof(PQgetvalue(itemsRes, i, 4));
                 int qty = atoi(PQgetvalue(itemsRes, i, 3));
                 subtotal += price * qty;
@@ -1269,56 +1282,218 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         PQclear(itemsRes);
 
-        double tax = subtotal * 0.08;
-        double shipping = subtotal > 50 ? 0 : 5.99;
-        double total = subtotal + tax + shipping - discount;
-        if (total < 0) total = 0;
-
-        std::string sql = "INSERT INTO orders (user_id, order_number, status, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, shipping_address, billing_address, payment_status) "
-                     "VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, '123 Test St', '123 Test St', 'pending') RETURNING id";
-        const char* paramValues[7] = {userId.c_str(), orderNumber.c_str(),
-                                      std::to_string(subtotal).c_str(), std::to_string(tax).c_str(),
-                                      std::to_string(shipping).c_str(), std::to_string(discount).c_str(),
-                                      std::to_string(total).c_str()};
-        PGresult* res = PQexecParams(dbConn, sql.c_str(), 7, nullptr, paramValues, nullptr, nullptr, 0);
-
-        if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
-            std::string orderId = PQgetvalue(res, 0, 0);
-            std::cerr << "[CREATEORDER] created orderId='" << orderId << "', orderNumber='" << orderNumber << "', total=" << total << ", discount=" << discount << ", couponCode='" << couponCode << "'" << std::endl;
-            PGresult* itemsRes2 = PQexecParams(dbConn, "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
-                                                          "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
-                                              1, nullptr, cartParam, nullptr, nullptr, 0);
-            if (PQresultStatus(itemsRes2) == PGRES_TUPLES_OK) {
-                int rows = PQntuples(itemsRes2);
-                for (int i = 0; i < rows; i++) {
-                    double price = atof(PQgetvalue(itemsRes2, i, 4));
-                    int qty = atoi(PQgetvalue(itemsRes2, i, 3));
-                    std::string itemSql = "INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price) "
-                                      "VALUES ($1, $2, $3, $4, $5, $6, $7)";
-                    const char* itemParams[7] = {orderId.c_str(), PQgetvalue(itemsRes2, i, 0),
-                                                   PQgetvalue(itemsRes2, i, 1), PQgetvalue(itemsRes2, i, 2),
-                                                   PQgetvalue(itemsRes2, i, 3), PQgetvalue(itemsRes2, i, 4),
-                                                   std::to_string(price * qty).c_str()};
-                    PQexecParams(dbConn, itemSql.c_str(), 7, nullptr, itemParams, nullptr, nullptr, 0);
-                }
-            }
-            PQclear(itemsRes2);
-
-            PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
-
+        if (itemCount == 0) {
             if (!firstField) response << ",";
             response << "\"createOrder\":{";
-            response << "\"success\":true,";
-            response << "\"orderId\":\"" << orderId << "\",";
-            response << "\"orderNumber\":\"" << orderNumber << "\",";
-            response << "\"totalAmount\":" << total;
+            response << "\"success\":false,";
+            response << "\"message\":\"Cart is empty\"";
             response << "}";
             firstField = false;
+        } else {
+            double tax = subtotal * 0.08;
+            double shipping = subtotal > 50 ? 0 : 5.99;
+            double total = subtotal + tax + shipping - discount;
+            if (total < 0) total = 0;
+
+            std::string sql = "INSERT INTO orders (user_id, order_number, status, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, shipping_address, billing_address, payment_status) "
+                         "VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, '123 Test St', '123 Test St', 'pending') RETURNING id";
+            const char* paramValues[7] = {userId.c_str(), orderNumber.c_str(),
+                                          std::to_string(subtotal).c_str(), std::to_string(tax).c_str(),
+                                          std::to_string(shipping).c_str(), std::to_string(discount).c_str(),
+                                          std::to_string(total).c_str()};
+            PGresult* res = PQexecParams(dbConn, sql.c_str(), 7, nullptr, paramValues, nullptr, nullptr, 0);
+
+            if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
+                std::string orderId = PQgetvalue(res, 0, 0);
+                std::cerr << "[CREATEORDER] created orderId='" << orderId << "', orderNumber='" << orderNumber << "', total=" << total << ", discount=" << discount << ", couponCode='" << couponCode << "'" << std::endl;
+                PGresult* itemsRes2 = PQexecParams(dbConn, "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
+                                                              "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                                                  1, nullptr, cartParam, nullptr, nullptr, 0);
+                if (PQresultStatus(itemsRes2) == PGRES_TUPLES_OK) {
+                    int rows = PQntuples(itemsRes2);
+                    for (int i = 0; i < rows; i++) {
+                        double price = atof(PQgetvalue(itemsRes2, i, 4));
+                        int qty = atoi(PQgetvalue(itemsRes2, i, 3));
+                        std::string itemSql = "INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price) "
+                                          "VALUES ($1, $2, $3, $4, $5, $6, $7)";
+                        const char* itemParams[7] = {orderId.c_str(), PQgetvalue(itemsRes2, i, 0),
+                                                       PQgetvalue(itemsRes2, i, 1), PQgetvalue(itemsRes2, i, 2),
+                                                       PQgetvalue(itemsRes2, i, 3), PQgetvalue(itemsRes2, i, 4),
+                                                       std::to_string(price * qty).c_str()};
+                        PQexecParams(dbConn, itemSql.c_str(), 7, nullptr, itemParams, nullptr, nullptr, 0);
+                    }
+                }
+                PQclear(itemsRes2);
+
+                PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
+
+                if (!firstField) response << ",";
+                response << "\"createOrder\":{";
+                response << "\"success\":true,";
+                response << "\"orderId\":\"" << orderId << "\",";
+                response << "\"orderNumber\":\"" << orderNumber << "\",";
+                response << "\"totalAmount\":" << total;
+                response << "}";
+                firstField = false;
+            } else {
+                if (!firstField) response << ",";
+                response << "\"createOrder\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"Failed to create order\"";
+                response << "}";
+                firstField = false;
+            }
+            PQclear(res);
         }
-        PQclear(res);
     } else if (query.find("createOrder(") != std::string::npos) {
         if (!firstField) response << ",";
         response << "\"createOrder\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
+    }
+
+    if (query.find("checkout(") != std::string::npos && !currentUser.id.empty()) {
+        std::string cardNumber = extractValue(query, "cardNumber");
+        std::string expiry = extractValue(query, "expiry");
+        std::string cvv = extractValue(query, "cvv");
+
+        std::cerr << "[CHECKOUT] user='" << currentUser.username << "', cardNumber='" << cardNumber << "'" << std::endl;
+
+        if (cardNumber.empty() || expiry.empty() || cvv.empty()) {
+            if (!firstField) response << ",";
+            response << "\"checkout\":{";
+            response << "\"success\":false,";
+            response << "\"message\":\"cardNumber, expiry, and cvv are required\"";
+            response << "}";
+            firstField = false;
+        } else {
+            std::string cartId = "";
+            std::string userId = currentUser.id;
+            double discount = 0;
+            std::string couponCode = "";
+            
+            const char* cartParams[1] = {userId.c_str()};
+            PGresult* cartRes = PQexecParams(dbConn, "SELECT id, COALESCE(discount, 0), COALESCE(coupon_code, '') FROM shopping_carts WHERE user_id = $1", 1, nullptr, cartParams, nullptr, nullptr, 0);
+            if (PQresultStatus(cartRes) == PGRES_TUPLES_OK && PQntuples(cartRes) > 0) {
+                cartId = PQgetvalue(cartRes, 0, 0);
+                discount = atof(PQgetvalue(cartRes, 0, 1));
+                couponCode = PQgetvalue(cartRes, 0, 2);
+            }
+            PQclear(cartRes);
+
+            if (cartId.empty()) {
+                if (!firstField) response << ",";
+                response << "\"checkout\":{";
+                response << "\"success\":false,";
+                response << "\"message\":\"No active cart found\"";
+                response << "}";
+                firstField = false;
+            } else {
+                struct CheckoutItemLine {
+                    std::string bookId;
+                    std::string title;
+                    std::string isbn;
+                    int quantity;
+                    double price;
+                };
+
+                std::vector<CheckoutItemLine> checkoutItems;
+                double subtotal = 0;
+                const char* cartParam[1] = {cartId.c_str()};
+                PGresult* itemsRes = PQexecParams(dbConn,
+                    "SELECT ci.book_id, b.title, b.isbn, ci.quantity, b.price "
+                    "FROM cart_items ci JOIN books b ON ci.book_id = b.id WHERE ci.cart_id = $1",
+                    1, nullptr, cartParam, nullptr, nullptr, 0);
+                if (PQresultStatus(itemsRes) == PGRES_TUPLES_OK) {
+                    int rows = PQntuples(itemsRes);
+                    for (int i = 0; i < rows; i++) {
+                        CheckoutItemLine line;
+                        line.bookId = PQgetvalue(itemsRes, i, 0);
+                        line.title = PQgetvalue(itemsRes, i, 1) ? PQgetvalue(itemsRes, i, 1) : "";
+                        line.isbn = PQgetvalue(itemsRes, i, 2) ? PQgetvalue(itemsRes, i, 2) : "";
+                        line.quantity = atoi(PQgetvalue(itemsRes, i, 3));
+                        line.price = atof(PQgetvalue(itemsRes, i, 4));
+                        subtotal += line.price * line.quantity;
+                        checkoutItems.push_back(line);
+                    }
+                }
+                PQclear(itemsRes);
+
+                if (checkoutItems.empty()) {
+                    if (!firstField) response << ",";
+                    response << "\"checkout\":{";
+                    response << "\"success\":false,";
+                    response << "\"message\":\"Cart is empty\"";
+                    response << "}";
+                    firstField = false;
+                } else {
+                    double tax = subtotal * 0.08;
+                    double shipping = subtotal > 50 ? 0 : 5.99;
+                    double total = subtotal + tax + shipping - discount;
+                    if (total < 0) total = 0;
+
+                    std::string orderNumber = "ORD-" + std::to_string(time(nullptr));
+                    std::string subtotalStr = std::to_string(subtotal);
+                    std::string taxStr = std::to_string(tax);
+                    std::string shippingStr = std::to_string(shipping);
+                    std::string discountStr = std::to_string(discount);
+                    std::string totalStr = std::to_string(total);
+                    
+                    const char* orderParams[7] = {userId.c_str(), orderNumber.c_str(),
+                                                  subtotalStr.c_str(), taxStr.c_str(),
+                                                  shippingStr.c_str(), discountStr.c_str(), totalStr.c_str()};
+                    PGresult* orderRes = PQexecParams(dbConn,
+                        "INSERT INTO orders (user_id, order_number, status, subtotal, tax_amount, shipping_amount, discount_amount, total_amount, shipping_address, billing_address, payment_status) "
+                        "VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7, '123 Test St', '123 Test St', 'pending') RETURNING id",
+                        7, nullptr, orderParams, nullptr, nullptr, 0);
+
+                    if (PQresultStatus(orderRes) == PGRES_TUPLES_OK && PQntuples(orderRes) > 0) {
+                        std::string orderId = PQgetvalue(orderRes, 0, 0);
+                        std::cerr << "[CHECKOUT] order created, orderId='" << orderId << "', total=" << total << std::endl;
+                        
+                        for (size_t i = 0; i < checkoutItems.size(); i++) {
+                            const auto& item = checkoutItems[i];
+                            std::string qtyStr = std::to_string(item.quantity);
+                            std::string priceStr = std::to_string(item.price);
+                            std::string totalLineStr = std::to_string(item.price * item.quantity);
+                            const char* itemParams[7] = {orderId.c_str(), item.bookId.c_str(),
+                                                          item.title.c_str(), item.isbn.c_str(), qtyStr.c_str(),
+                                                          priceStr.c_str(), totalLineStr.c_str()};
+                            PGresult* itemInsertRes = PQexecParams(dbConn,
+                                "INSERT INTO order_items (order_id, book_id, book_title, book_isbn, quantity, unit_price, total_price) "
+                                "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                                7, nullptr, itemParams, nullptr, nullptr, 0);
+                            PQclear(itemInsertRes);
+                        }
+
+                        PGresult* clearCartRes = PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
+                        PQclear(clearCartRes);
+
+                        std::string paymentResult = processPayment(userId, orderId, total, cardNumber, expiry, cvv);
+
+                        if (!firstField) response << ",";
+                        response << "\"checkout\":{";
+                        response << "\"success\":true,";
+                        response << "\"orderId\":\"" << orderId << "\",";
+                        response << "\"orderNumber\":\"" << orderNumber << "\",";
+                        response << "\"totalAmount\":" << total << ",";
+                        response << "\"payment\":" << paymentResult;
+                        response << "}";
+                        firstField = false;
+                    } else {
+                        if (!firstField) response << ",";
+                        response << "\"checkout\":{";
+                        response << "\"success\":false,";
+                        response << "\"message\":\"Failed to create order\"";
+                        response << "}";
+                        firstField = false;
+                    }
+                    PQclear(orderRes);
+                }
+            }
+        }
+    } else if (query.find("checkout(") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"checkout\":{\"success\":false,\"message\":\"Authentication required\"}";
         firstField = false;
     }
 
