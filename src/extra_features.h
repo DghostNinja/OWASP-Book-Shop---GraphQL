@@ -22,6 +22,7 @@ struct Webhook {
     std::string url;
     std::string secret;
     bool isActive;
+    std::string events;
 };
 
 extern std::map<int, Review> reviewsCache;
@@ -29,5 +30,6 @@ extern std::map<std::string, Webhook> webhooksCache;
 
 void loadReviewsCache();
 void loadWebhooksCache();
+void triggerWebhooks(const std::string& eventType, const std::string& payload);
 
 #endif // EXTRA_FEATURES_H

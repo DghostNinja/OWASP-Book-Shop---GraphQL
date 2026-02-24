@@ -1327,6 +1327,9 @@ std::string handleMutation(const std::string& query, User& currentUser) {
 
                 PQexecParams(dbConn, "DELETE FROM cart_items WHERE cart_id = $1", 1, nullptr, cartParam, nullptr, nullptr, 0);
 
+                std::string orderPayload = "{\"order_id\":\"" + orderId + "\",\"order_number\":\"" + orderNumber + "\",\"total\":" + std::to_string(total) + ",\"status\":\"pending\"}";
+                triggerWebhooks("order.created", orderPayload);
+
                 if (!firstField) response << ",";
                 response << "\"createOrder\":{";
                 response << "\"success\":true,";
@@ -1608,6 +1611,17 @@ std::string handleMutation(const std::string& query, User& currentUser) {
 
                         std::string paymentResult = processPayment(userId, orderId, total, cardNumber, expiry, cvv);
 
+                        if (paymentResult.find("\"success\":true") != std::string::npos) {
+                            std::string paymentPayload = "{\"order_id\":\"" + orderId + "\",\"transaction_id\":\"" + orderId + "\",\"status\":\"completed\",\"amount\":" + totalStr + "}";
+                            triggerWebhooks("payment.completed", paymentPayload);
+
+                            std::string orderPayload = "{\"order_id\":\"" + orderId + "\",\"status\":\"paid\"}";
+                            triggerWebhooks("order.paid", orderPayload);
+                        } else {
+                            std::string paymentPayload = "{\"order_id\":\"" + orderId + "\",\"status\":\"failed\",\"amount\":" + totalStr + "}";
+                            triggerWebhooks("payment.failed", paymentPayload);
+                        }
+
                         if (!firstField) response << ",";
                         response << "\"purchaseCart\":{";
                         response << "\"success\":true,";
@@ -1649,6 +1663,9 @@ std::string handleMutation(const std::string& query, User& currentUser) {
             if (actualUserId == currentUser.id || currentUser.role == "admin" || currentUser.role == "staff") {
                 PQexecParams(dbConn, "UPDATE orders SET status = 'cancelled', payment_status = 'refunded' WHERE id = $1", 1, nullptr, params, nullptr, nullptr, 0);
                 std::cerr << "[CANCELORDER] order '" << orderId << "' cancelled successfully" << std::endl;
+
+                std::string orderPayload = "{\"order_id\":\"" + orderId + "\",\"status\":\"cancelled\",\"refund_status\":\"processed\"}";
+                triggerWebhooks("order.cancelled", orderPayload);
                 response << "\"cancelOrder\":{";
                 response << "\"success\":true,";
                 response << "\"message\":\"Order cancelled successfully\"";
@@ -1690,6 +1707,9 @@ std::string handleMutation(const std::string& query, User& currentUser) {
 
         if (!firstField) response << ",";
         if (PQresultStatus(res) == PGRES_TUPLES_OK) {
+            std::string reviewPayload = "{\"book_id\":" + std::to_string(bookId) + ",\"rating\":" + std::to_string(rating) + ",\"user_id\":\"" + currentUser.id + "\"}";
+            triggerWebhooks("review.created", reviewPayload);
+
             response << "\"createReview\":{";
             response << "\"success\":true,";
             response << "\"message\":\"Review created successfully\"";

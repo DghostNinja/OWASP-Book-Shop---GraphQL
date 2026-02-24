@@ -458,7 +458,7 @@ mutation { createOrder() { success orderId } }
 - **Order Management**: Create orders from cart, cancel orders
 - **Unified Checkout**: New `checkout` mutation combines createOrder + purchaseCart in one atomic operation
 - **Review System**: Create and delete reviews
-- **Webhook System**: Register webhooks with SSRF via testWebhook
+- **Webhook System**: Register webhooks to receive real-time notifications for order and payment events (order.created, order.paid, order.cancelled, payment.completed, payment.failed, review.created). Includes SSRF vulnerability via testWebhook
 - **Admin Queries**: Stats, orders, and payments accessible without auth
 - **Rate Limiting**: IP-based rate limiting (100 requests/minute, 5-min block)
 - **API Documentation Page**: Beautiful glass-morphism landing page with query runner
