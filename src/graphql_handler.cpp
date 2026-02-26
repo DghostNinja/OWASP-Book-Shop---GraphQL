@@ -578,7 +578,8 @@ std::string handleQuery(const std::string& query, const User& currentUser) {
         response << "{\"name\":\"createReview\"},";
         response << "{\"name\":\"deleteReview\"},";
         response << "{\"name\":\"registerWebhook\"},";
-        response << "{\"name\":\"testWebhook\"}";
+        response << "{\"name\":\"testWebhook\"},";
+        response << "{\"name\":\"logout\"}";
         response << "]}";
         response << "}";
         firstField = false;
@@ -1967,6 +1968,19 @@ std::string handleMutation(const std::string& query, User& currentUser) {
         }
         firstField = false;
         PQclear(res);
+    }
+
+    if ((query.find("logout(") != std::string::npos || query.find("logout {") != std::string::npos) && !currentUser.id.empty()) {
+        if (!firstField) response << ",";
+        response << "\"logout\":{";
+        response << "\"success\":true,";
+        response << "\"message\":\"Logged out successfully\"";
+        response << "}";
+        firstField = false;
+    } else if (query.find("logout(") != std::string::npos || query.find("logout {") != std::string::npos) {
+        if (!firstField) response << ",";
+        response << "\"logout\":{\"success\":false,\"message\":\"Authentication required\"}";
+        firstField = false;
     }
 
     response << "}}";

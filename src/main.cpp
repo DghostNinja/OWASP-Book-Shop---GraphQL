@@ -145,11 +145,12 @@ bool requiresAuthentication(const string& query) {
     vector<string> authRequiredMutations = {
         "addToCart", "removeFromCart", "applyCoupon", "createOrder",
         "purchaseCart", "checkout", "cancelOrder", "createReview",
-        "deleteReview", "registerWebhook", "testWebhook", "updateProfile"
+        "deleteReview", "registerWebhook", "testWebhook", "updateProfile",
+        "logout"
     };
     
     for (const auto& keyword : authRequiredMutations) {
-        if (query.find(keyword + "(") != string::npos) {
+        if (query.find(keyword + "(") != string::npos || query.find(keyword + " {") != string::npos) {
             return true;
         }
     }

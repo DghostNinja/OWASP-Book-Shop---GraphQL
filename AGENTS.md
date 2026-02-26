@@ -110,6 +110,9 @@ Tests the complete user journey through the API:
 | 22 | Cart empty after purchase | Verify cart cleared |
 | 23 | Search books | Test search functionality |
 | 24 | Introspection | GraphQL schema discovery |
+| 25 | Logout | Logout and clear token |
+| 26 | Verify token invalidated | JWT is stateless (token still works) |
+| 27 | Access without token | Returns 401 Authentication required |
 
 **Flow Test Output Example:**
 ```
@@ -460,6 +463,8 @@ mutation { createOrder() { success orderId } }
 - **Unified Checkout**: New `checkout` mutation combines createOrder + purchaseCart in one atomic operation
 - **Review System**: Create and delete reviews
 - **Webhook System**: Register webhooks to receive real-time notifications for order and payment events (order.created, order.paid, order.cancelled, payment.completed, payment.failed, review.created). Includes SSRF vulnerability via testWebhook
+- **Logout Mutation**: New `logout` mutation that tells client to discard JWT token (note: JWT is stateless so server cannot invalidate existing tokens)
+- **HTTP Status Codes**: Proper 401 for authentication errors, 403 for authorization errors
 - **Admin Queries**: Stats, orders, and payments accessible without auth
 - **Rate Limiting**: IP-based rate limiting (100 requests/minute, 5-min block)
 - **API Documentation Page**: Beautiful glass-morphism landing page with query runner
