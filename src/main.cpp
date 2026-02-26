@@ -141,6 +141,57 @@ bool readFullRequest(int clientSocket, string& request, int timeoutSec) {
     return !request.empty();
 }
 
+bool requiresAuthentication(const string& query) {
+    vector<string> authRequiredMutations = {
+        "addToCart", "removeFromCart", "applyCoupon", "createOrder",
+        "purchaseCart", "checkout", "cancelOrder", "createReview",
+        "deleteReview", "registerWebhook", "testWebhook", "updateProfile"
+    };
+    
+    for (const auto& keyword : authRequiredMutations) {
+        if (query.find(keyword + "(") != string::npos) {
+            return true;
+        }
+    }
+    
+    if (query.find("query { cart") != string::npos || 
+        query.find("query{cart") != string::npos ||
+        query.find("query { orders") != string::npos ||
+        query.find("query{orders") != string::npos ||
+        query.find("query { myReviews") != string::npos ||
+        query.find("query{myReviews") != string::npos ||
+        query.find("query { webhooks") != string::npos ||
+        query.find("query{webhooks") != string::npos ||
+        query.find("query { me") != string::npos ||
+        query.find("query{me") != string::npos ||
+        query.find("mutation { cart") != string::npos ||
+        query.find("mutation{cart") != string::npos) {
+        return true;
+    }
+    
+    return false;
+}
+
+bool isAuthorizationError(const string& responseBody) {
+    vector<string> authzPatterns = {
+        "only", "forbidden", "access denied", "not authorized", 
+        "permission denied", "insufficient privileges", "unauthorized access",
+        "admin required", "admins only", "not allowed"
+    };
+    
+    string lowerResponse = responseBody;
+    for (char& c : lowerResponse) {
+        c = tolower(c);
+    }
+    
+    for (const auto& pattern : authzPatterns) {
+        if (lowerResponse.find(pattern) != string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int main() {
     curl_global_init(CURL_GLOBAL_ALL);
     
@@ -288,7 +339,8 @@ int main() {
                 authHeaderStr = authHeaderStr.substr(1);
             }
 
-            User currentUser = extractAuthUser(authHeaderStr);
+            AuthResult authResult = extractAuthUserWithError(authHeaderStr);
+            User currentUser = authResult.user;
 
             size_t headerEnd = request.find("\r\n\r\n");
             if (headerEnd == string::npos) headerEnd = request.find("\n\n");
@@ -298,8 +350,11 @@ int main() {
             if (headerEnd != string::npos) {
                 string body = request.substr(headerEnd + 4);
 
+                cerr << "[DEBUG] Raw body: " << body << endl;
+
                 if (!isValidJson(body)) {
                     string errorResponse = "{\"errors\":[{\"message\":\"Invalid JSON: Malformed request body\"}]}";
+                    cerr << "[DEBUG] Response: " << errorResponse << endl;
                     string response = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: " +
                         to_string(errorResponse.length()) + "\r\n\r\n" + errorResponse;
                     send(clientSocket, response.c_str(), response.length(), 0);
@@ -340,6 +395,25 @@ int main() {
 
             cerr << "[DEBUG] Raw query: " << queryStr << endl;
 
+            bool hasAuthHeader = !authHeaderStr.empty();
+            if (!hasAuthHeader && requiresAuthentication(queryStr)) {
+                string errorResponse = "{\"errors\":[{\"message\":\"Authentication required\"}]}";
+                string response = "HTTP/1.1 401 Unauthorized\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: " +
+                    to_string(errorResponse.length()) + "\r\n\r\n" + errorResponse;
+                send(clientSocket, response.c_str(), response.length(), 0);
+                close(clientSocket);
+                continue;
+            }
+
+            if (hasAuthHeader && !authResult.valid) {
+                string errorResponse = "{\"errors\":[{\"message\":\"" + authResult.error + "\"}]}";
+                string response = "HTTP/1.1 401 Unauthorized\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: " +
+                    to_string(errorResponse.length()) + "\r\n\r\n" + errorResponse;
+                send(clientSocket, response.c_str(), response.length(), 0);
+                close(clientSocket);
+                continue;
+            }
+
             bool isMutation = (queryStr.find("mutation {") != string::npos || 
                                queryStr.find("mutation(") != string::npos ||
                                queryStr.find("mutation{") != string::npos);
@@ -348,7 +422,12 @@ int main() {
 
             cerr << "[DEBUG] Response: " << responseBody << endl;
 
-            string response = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nContent-Type: application/json\r\nContent-Length: " +
+            string httpStatus = "200 OK";
+            if (isAuthorizationError(responseBody)) {
+                httpStatus = "403 Forbidden";
+            }
+
+            string response = "HTTP/1.1 " + httpStatus + "\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Headers: Content-Type, Authorization\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nContent-Type: application/json\r\nContent-Length: " +
                 to_string(responseBody.length()) + "\r\nX-Content-Type-Options: nosniff\r\n\r\n" + responseBody;
             send(clientSocket, response.c_str(), response.length(), 0);
         }

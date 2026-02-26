@@ -21,11 +21,18 @@ struct User {
     std::string country;
 };
 
+struct AuthResult {
+    User user;
+    bool valid;
+    std::string error;
+};
+
 extern std::map<std::string, User> usersCache;
 
 void loadUsersCache();
 User* getUserByUsername(const std::string& username);
 std::string generateJWT(const User& user);
 User verifyJWT(const std::string& token);
+AuthResult verifyJWTWithError(const std::string& token);
 
 #endif // USER_MANAGER_H

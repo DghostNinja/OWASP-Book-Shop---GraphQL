@@ -1974,8 +1974,16 @@ std::string handleMutation(const std::string& query, User& currentUser) {
 }
 
 User extractAuthUser(const std::string& authHeader) {
+    AuthResult result = extractAuthUserWithError(authHeader);
+    return result.user;
+}
+
+AuthResult extractAuthUserWithError(const std::string& authHeader) {
     if (authHeader.empty()) {
-        return User();
+        AuthResult result;
+        result.valid = false;
+        result.error = "No token provided";
+        return result;
     }
     
     std::string token = authHeader;
@@ -1983,7 +1991,7 @@ User extractAuthUser(const std::string& authHeader) {
         token = token.substr(7);
     }
     
-    return verifyJWT(token);
+    return verifyJWTWithError(token);
 }
 
 std::string handleRequest(const std::string& query, User& currentUser, bool isMutation) {

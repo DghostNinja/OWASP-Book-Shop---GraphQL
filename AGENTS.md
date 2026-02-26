@@ -452,7 +452,7 @@ mutation { createOrder() { success orderId } }
 ### Recent Features Added
 - **Field Selection**: All queries now return only requested fields (e.g., `{ books { id title } }` returns only id and title). Fixed proper nested field selection for cart, orders, and other nested queries.
 - **JWT Enhancements**: Tokens now include `iat` (issued at) and `exp` (expires in 6 hours), with proper expiration validation. Expired tokens are now rejected.
-- **JSON Validation**: Invalid JSON requests are now rejected with proper error messages (400 Bad Request)
+- **JSON Validation**: Invalid JSON requests are now rejected with proper error messages (400 Bad Request). Validates for unquoted keys, single quotes, missing/extra braces, and trailing commas.
 - **Nested Author Field**: Books can include author details via `author { firstName lastName }`
 - **Authors Cache**: Authors are loaded at startup for nested queries
 - **Shopping Cart System**: Full cart functionality with add/remove items
@@ -708,7 +708,16 @@ The server logs both incoming requests and responses for debugging:
 
 ### Authentication Error Handling
 
-All endpoints that require authentication return proper error messages when not authenticated:
+The API returns proper HTTP status codes for authentication and authorization errors:
+
+| Scenario | HTTP Status | Response |
+|----------|-------------|----------|
+| No auth token on protected endpoint | 401 | `{"errors":[{"message":"Authentication required"}]}` |
+| Invalid/malformed token | 401 | `{"errors":[{"message":"Invalid token"}]}` |
+| Expired token | 401 | `{"errors":[{"message":"Token expired"}]}` |
+| Authenticated but insufficient permissions | 403 | `{"data":{...,"message":"You can only..."}}` |
+
+**Error Responses by Endpoint (when not authenticated):**
 
 | Endpoint | Error Response |
 |----------|---------------|
@@ -726,6 +735,16 @@ All endpoints that require authentication return proper error messages when not 
 | `deleteReview` | `{"deleteReview":{"success":false,"message":"Authentication required"}}` |
 | `registerWebhook` | `{"registerWebhook":{"success":false,"message":"Authentication required"}}` |
 | `testWebhook` | `{"testWebhook":{"success":false,"message":"Authentication required"}}` |
+
+**Authorization Error Examples (403 Forbidden):**
+
+When authenticated users try to access resources they don't own/have permission for:
+
+| Scenario | Response |
+|----------|----------|
+| User tries to delete another user's review | `{"deleteReview":{"success":false,"message":"You can only delete your own reviews"}}` |
+| User tries to cancel another user's order | `{"cancelOrder":{"success":false,"message":"You can only cancel your own orders"}}` |
+| User tries to test another user's webhook | `{"testWebhook":{"success":false,"message":"You can only test your own webhooks"}}` |
 
 ALWAYS test with debug logging enabled:
 547: cerr << "[DEBUG] Raw body: " << body << endl;

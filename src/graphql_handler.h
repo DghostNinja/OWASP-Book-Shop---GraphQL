@@ -33,6 +33,7 @@ std::string handleMutation(const std::string& query, User& currentUser);
 
 // Request Handler
 User extractAuthUser(const std::string& authHeader);
+AuthResult extractAuthUserWithError(const std::string& authHeader);
 std::string handleRequest(const std::string& query, User& currentUser, bool isMutation);
 
 #endif // GRAPHQL_HANDLER_H

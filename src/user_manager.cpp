@@ -75,35 +75,50 @@ std::string generateJWT(const User& user) {
 }
 
 User verifyJWT(const std::string& token) {
-    User user;
+    AuthResult result = verifyJWTWithError(token);
+    return result.user;
+}
+
+AuthResult verifyJWTWithError(const std::string& token) {
+    AuthResult result;
+    result.valid = false;
+    result.user.isActive = false;
+
+    if (token.empty()) {
+        result.error = "No token provided";
+        return result;
+    }
 
     jwt_t* jwt = nullptr;
 
-    // JWT_SECRET is currently a macro in main.cpp, need to make it accessible
     const char* JWT_SECRET = getenv("JWT_SECRET") ? getenv("JWT_SECRET") : "CHANGE_ME_IN_PRODUCTION_real_jwt_secret_key_2024";
     int rc = jwt_decode(&jwt, token.c_str(), (unsigned char*)JWT_SECRET, strlen(JWT_SECRET));
     if (rc != 0) {
-        return user;
+        result.error = "Invalid token";
+        return result;
     }
 
-    // Check expiration time
     time_t exp = jwt_get_grant_int(jwt, "exp");
     if (exp == 0) {
         jwt_free(jwt);
-        return user;
+        result.error = "Invalid token: missing expiration";
+        return result;
     }
 
     time_t now = time(nullptr);
     if (now >= exp) {
         jwt_free(jwt);
-        return user;
+        result.error = "Token expired";
+        return result;
     }
 
-    user.id = jwt_get_grant(jwt, "sub");
-    user.username = jwt_get_grant(jwt, "username");
-    user.role = jwt_get_grant(jwt, "role");
-    user.isActive = true;
+    result.user.id = jwt_get_grant(jwt, "sub");
+    result.user.username = jwt_get_grant(jwt, "username");
+    result.user.role = jwt_get_grant(jwt, "role");
+    result.user.isActive = true;
+    result.valid = true;
+    result.error = "";
 
     jwt_free(jwt);
-    return user;
+    return result;
 }
