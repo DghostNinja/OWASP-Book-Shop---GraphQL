@@ -1349,7 +1349,9 @@ sudo docker-compose down</pre>
                             <button class="copy-button" onclick="copyToClipboard('usage-curl')">Copy</button>
                         </div>
                         <div class="code-block">
-                            <pre id="usage-curl"># Query books (no auth):
+                            <pre id="usage-curl">
+# <b>Endpoint: https://api.graphqlbook.store/graphql OR http://localhost:4000/graphql </b><br>
+# Query books (no auth):
 curl -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -d '{"query":"{ books { id title price } }"}'
@@ -1368,7 +1370,8 @@ curl -X POST http://localhost:4000/graphql \
                         </div>
                         <div class="code-block">
                             <pre id="usage-postman"># Method: POST
-# URL: http://localhost:4000/graphql
+# <b>Endpoint: https://api.graphqlbook.store/graphql OR http://localhost:4000/graphql </b><br>
+
 # Headers: Content-Type: application/json
 # Body (JSON):
 {
@@ -1389,10 +1392,11 @@ curl -X POST http://localhost:4000/graphql \
                             <pre id="usage-playground">
 
 # Use external tools:
-# - https://studio.apollographql.com/
+# - <a href="https://studio.apollographql.com/sandbox/explore" style="color: inherit; text-decoration: none;">Apollo GraphQL Studio </a>
 # - Postman, Insomnia, curl
 
-# Endpoint: http://localhost:4000/graphql</pre>
+# <b>Endpoint: https://api.graphqlbook.store/graphql OR http://localhost:4000/graphql </b><br>
+</pre>
                         </div>
                     </div>
 
