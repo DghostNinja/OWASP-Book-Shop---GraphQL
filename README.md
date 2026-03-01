@@ -13,6 +13,75 @@ A realistic GraphQL API server built in C++ designed for security education and 
 - **Complete CRUD Operations** - Users, books, orders, reviews, coupons
 - **All OWASP API Security Top 10 vulnerabilities** implemented realistically
 
+## Overview
+
+### MCP Server - AI/LLM Integration
+
+The Bookstore API includes an MCP (Model Context Protocol) server that exposes all API operations as tools for AI and LLM models. This enables AI assistants to interact with the Bookstore API natively.
+
+#### Quick Installation
+
+```bash
+# Navigate to MCP directory and install
+cd mcp
+npm install
+```
+
+#### Usage
+
+**Local Development:**
+```bash
+# Start the Bookstore API server (from project root)
+./bookstore-server
+
+# In another terminal, start MCP server
+cd mcp
+npm start
+```
+
+**Production (Live API):**
+```bash
+cd mcp
+API_URL=https://api.graphqlbook.store/graphql npm start
+```
+
+#### Available MCP Tools (25 total)
+
+| Category | Tools |
+|----------|-------|
+| Authentication | `bookstore_login`, `bookstore_register`, `bookstore_me` |
+| Books | `bookstore_books`, `bookstore_book`, `bookstore_search` |
+| Cart | `bookstore_cart`, `bookstore_add_to_cart`, `bookstore_remove_from_cart` |
+| Orders | `bookstore_orders`, `bookstore_create_order`, `bookstore_purchase_cart`, `bookstore_cancel_order` |
+| Reviews | `bookstore_create_review`, `bookstore_delete_review`, `bookstore_book_reviews`, `bookstore_my_reviews` |
+| Profile | `bookstore_update_profile` |
+| Coupons | `bookstore_apply_coupon` |
+| Webhooks | `bookstore_register_webhook`, `bookstore_webhooks`, `bookstore_test_webhook` |
+| Admin | `bookstore_admin_stats`, `bookstore_admin_orders`, `bookstore_admin_payments` |
+| Special | `bookstore_pro_inventory` |
+
+#### Claude Desktop Integration
+
+Add to your Claude Desktop config:
+
+```json
+{
+  "mcpServers": {
+    "bookstore": {
+      "command": "node",
+      "args": ["/path/to/GraphQL-Bookstore/mcp/mcp_server.mjs"],
+      "env": {
+        "API_URL": "http://localhost:4000/graphql"
+      }
+    }
+  }
+}
+```
+
+For production, change `API_URL` to `https://api.graphqlbook.store/graphql`.
+
+See `mcp/README.md` for detailed documentation.
+
 ## OWASP API Security Top 10 Coverage
 
 This environment includes realistic implementations of all OWASP API Security Top 10 vulnerabilities:

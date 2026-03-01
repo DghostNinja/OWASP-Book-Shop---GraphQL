@@ -1143,6 +1143,7 @@ string generateLandingHTML() {
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('queries')">Queries</a>
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('mutations')">Mutations</a>
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('vulnerabilities')">Vulnerabilities</a>
+                    <a href="#" class="sidebar-item sub-item" onclick="showSection('mcp-docs')">MCP Server</a>
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('feedback')">Feedback</a>
                 </div>
             </div>
@@ -2247,6 +2248,146 @@ docker-compose up --build</pre>
                             <div style="margin-bottom: 10px;">&#8226; <strong>Debug Endpoints</strong> - Internal information may be exposed</div>
                         </div>
                     </div>
+                </div>
+
+                <!-- MCP Server Section -->
+                <div id="mcp-docs" class="doc-section glass-panel">
+                    <div class="section-title">MCP Server - AI/LLM Integration</div>
+                    
+                    <p style="color: rgba(255,255,255,0.7); margin-bottom: 20px; line-height: 1.6;">
+                        The Bookstore API includes an <strong>MCP (Model Context Protocol)</strong> server that exposes all API operations as tools for AI and LLM models. This enables AI assistants to interact with the Bookstore API natively.
+                    </p>
+
+                    <div class="section-title" style="margin-top: 25px;">Quick Installation</div>
+                    <div class="code-block">
+                        <pre style="color: #a3a3a3; line-height: 1.8;">
+# Navigate to MCP directory and install
+cd mcp
+npm install</pre>
+                    </div>
+
+                    <div class="section-title" style="margin-top: 25px;">Usage</div>
+                    
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 10px; line-height: 1.6;">
+                        <strong>Local Development:</strong>
+                    </p>
+                    <div class="code-block">
+                        <pre style="color: #a3a3a3; line-height: 1.8;">
+# Start the Bookstore API server (from project root)
+./bookstore-server
+
+# In another terminal, start MCP server
+cd mcp
+npm start</pre>
+                    </div>
+
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 10px; line-height: 1.6;">
+                        <strong>Production (Live API):</strong>
+                    </p>
+                    <div class="code-block">
+                        <pre style="color: #a3a3a3; line-height: 1.8;">
+cd mcp
+API_URL=https://api.graphqlbook.store/graphql npm start</pre>
+                    </div>
+
+                    <div class="section-title" style="margin-top: 25px;">Available MCP Tools</div>
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 15px; line-height: 1.6;">
+                        The MCP server exposes 25 tools organized by category:
+                    </p>
+                    
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Authentication</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_login<br>
+                                bookstore_register<br>
+                                bookstore_me
+                            </div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Books</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_books<br>
+                                bookstore_book<br>
+                                bookstore_search
+                            </div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Cart</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_cart<br>
+                                bookstore_add_to_cart<br>
+                                bookstore_remove_from_cart
+                            </div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Orders</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_orders<br>
+                                bookstore_create_order<br>
+                                bookstore_purchase_cart<br>
+                                bookstore_cancel_order
+                            </div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Reviews</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_create_review<br>
+                                bookstore_delete_review<br>
+                                bookstore_book_reviews<br>
+                                bookstore_my_reviews
+                            </div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Other</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                                bookstore_update_profile<br>
+                                bookstore_apply_coupon<br>
+                                bookstore_webhooks<br>
+                                bookstore_admin_stats
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section-title" style="margin-top: 25px;">Claude Desktop Integration</div>
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 10px; line-height: 1.6;">
+                        Add the following to your Claude Desktop config file:
+                    </p>
+                    <div class="code-block">
+                        <pre style="color: #a3a3a3; line-height: 1.6;">
+{
+  "mcpServers": {
+    "bookstore": {
+      "command": "node",
+      "args": ["/path/to/GraphQL-Bookstore/mcp/mcp_server.mjs"],
+      "env": {
+        "API_URL": "http://localhost:4000/graphql"
+      }
+    }
+  }
+}</pre>
+                    </div>
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 20px; line-height: 1.6;">
+                        For production, change <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">API_URL</code> to <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">https://api.graphqlbook.store/graphql</code>.
+                    </p>
+
+                    <div class="section-title" style="margin-top: 25px;">Environment Variables</div>
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <th style="text-align: left; padding: 10px; color: #4fd1c5;">Variable</th>
+                            <th style="text-align: left; padding: 10px; color: #4fd1c5;">Default</th>
+                            <th style="text-align: left; padding: 10px; color: #4fd1c5;">Description</th>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+                            <td style="padding: 10px; color: rgba(255,255,255,0.8);">API_URL</td>
+                            <td style="padding: 10px; color: rgba(255,255,255,0.6);">http://localhost:4000/graphql</td>
+                            <td style="padding: 10px; color: rgba(255,255,255,0.6);">Bookstore API endpoint</td>
+                        </tr>
+                    </table>
+
+                    <p style="color: rgba(255,255,255,0.6); margin-bottom: 20px; line-height: 1.6;">
+                        See <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">mcp/README.md</code> for detailed documentation.
+                    </p>
                 </div>
 
                 <!-- Feedback Section -->
