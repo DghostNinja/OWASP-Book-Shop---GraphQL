@@ -1053,6 +1053,12 @@ string generateLandingHTML() {
             border: 1px solid rgba(248, 113, 113, 0.3);
             color: #f87171;
         }
+        .honeypot-field {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -2207,13 +2213,18 @@ docker-compose up --build</pre>
                     </p>
 
                     <div class="feedback-form">
+                        <input type="text" id="feedbackHoneypot" class="honeypot-field" tabindex="-1" autocomplete="off" />
                         <div class="form-group">
                             <label for="feedbackName">Your Name</label>
-                            <input type="text" id="feedbackName" placeholder="Enter your name (optional)" />
+                            <input type="text" id="feedbackName" placeholder="Enter your name (optional)" maxlength="100" />
                         </div>
                         <div class="form-group">
                             <label for="feedbackComment">Your Comment</label>
-                            <textarea id="feedbackComment" placeholder="Share your thoughts, suggestions, or report issues..." rows="5"></textarea>
+                            <textarea id="feedbackComment" placeholder="Share your thoughts, suggestions, or report issues..." rows="5" maxlength="1000"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackCaptcha">What is <span id="captchaNum1"></span> + <span id="captchaNum2"></span>?</label>
+                            <input type="number" id="feedbackCaptcha" placeholder="Enter the sum" style="width: 200px;" />
                         </div>
                         <button class="submit-button" onclick="submitFeedback()">Submit Feedback</button>
                         <div id="feedbackMessage" class="feedback-message"></div>
@@ -2227,16 +2238,64 @@ docker-compose up --build</pre>
     <footer>GraphQL Bookstore API</footer>
 
     <script>
+        var captchaNum1 = 0;
+        var captchaNum2 = 0;
+
+        function generateCaptcha() {
+            captchaNum1 = Math.floor(Math.random() * 10) + 1;
+            captchaNum2 = Math.floor(Math.random() * 10) + 1;
+            document.getElementById('captchaNum1').textContent = captchaNum1;
+            document.getElementById('captchaNum2').textContent = captchaNum2;
+            document.getElementById('feedbackCaptcha').value = '';
+        }
+
+        function sanitizeInput(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         function submitFeedback() {
-            const name = document.getElementById('feedbackName').value.trim();
-            const comment = document.getElementById('feedbackComment').value.trim();
+            const honeypot = document.getElementById('feedbackHoneypot').value;
+            const name = sanitizeInput(document.getElementById('feedbackName').value.trim());
+            const comment = sanitizeInput(document.getElementById('feedbackComment').value.trim());
+            const captchaAnswer = document.getElementById('feedbackCaptcha').value;
             const messageEl = document.getElementById('feedbackMessage');
             const submitBtn = document.querySelector('.submit-button');
+
+            if (honeypot) {
+                return;
+            }
+
+            const now = Date.now();
+            const lastSubmit = parseInt(localStorage.getItem('feedbackLastSubmit') || '0');
+            if (now - lastSubmit < 30000) {
+                messageEl.className = 'feedback-message error';
+                messageEl.textContent = 'Please wait 30 seconds before submitting again.';
+                messageEl.style.display = 'block';
+                return;
+            }
 
             if (!comment) {
                 messageEl.className = 'feedback-message error';
                 messageEl.textContent = 'Please enter a comment before submitting.';
                 messageEl.style.display = 'block';
+                return;
+            }
+
+            if (comment.length < 3) {
+                messageEl.className = 'feedback-message error';
+                messageEl.textContent = 'Comment must be at least 3 characters.';
+                messageEl.style.display = 'block';
+                return;
+            }
+
+            const expectedAnswer = captchaNum1 + captchaNum2;
+            if (parseInt(captchaAnswer) !== expectedAnswer) {
+                messageEl.className = 'feedback-message error';
+                messageEl.textContent = 'Incorrect answer. Please solve the math problem.';
+                messageEl.style.display = 'block';
+                generateCaptcha();
                 return;
             }
 
@@ -2257,11 +2316,13 @@ docker-compose up --build</pre>
                     comment: comment
                 })
             }).then(() => {
+                localStorage.setItem('feedbackLastSubmit', now.toString());
                 messageEl.className = 'feedback-message success';
                 messageEl.textContent = 'Thank you for your feedback!';
                 messageEl.style.display = 'block';
                 document.getElementById('feedbackName').value = '';
                 document.getElementById('feedbackComment').value = '';
+                generateCaptcha();
             }).catch((error) => {
                 messageEl.className = 'feedback-message error';
                 messageEl.textContent = 'Failed to submit feedback. Please try again.';
@@ -2271,6 +2332,8 @@ docker-compose up --build</pre>
                 submitBtn.textContent = 'Submit Feedback';
             });
         }
+
+        generateCaptcha();
     </script>
 
     <script>
