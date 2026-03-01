@@ -962,6 +962,97 @@ string generateLandingHTML() {
             .method-badge { font-size: 0.6rem; padding: 2px 6px; }
             .method-info-text { text-align: center; font-size: 0.75rem; }
         }
+        .feedback-form {
+            background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.01) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 25px;
+            margin-top: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 0.9rem;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: all 0.25s ease;
+            box-sizing: border-box;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.05);
+            box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.1);
+        }
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+        .form-group textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+        .submit-button {
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            color: #000;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            width: 100%;
+        }
+        .submit-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.3);
+        }
+        .submit-button:active {
+            transform: translateY(0);
+        }
+        .submit-button:disabled {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        .feedback-message {
+            margin-top: 15px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            text-align: center;
+            display: none;
+        }
+        .feedback-message.success {
+            display: block;
+            background: rgba(74, 222, 128, 0.1);
+            border: 1px solid rgba(74, 222, 128, 0.3);
+            color: #4ade80;
+        }
+        .feedback-message.error {
+            display: block;
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: #f87171;
+        }
     </style>
 </head>
 <body>
@@ -1001,6 +1092,7 @@ string generateLandingHTML() {
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('queries')">Queries</a>
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('mutations')">Mutations</a>
                     <a href="#" class="sidebar-item sub-item" onclick="showSection('vulnerabilities')">Vulnerabilities</a>
+                    <a href="#" class="sidebar-item sub-item" onclick="showSection('feedback')">Feedback</a>
                 </div>
             </div>
         </div>
@@ -2106,11 +2198,80 @@ docker-compose up --build</pre>
                     </div>
                 </div>
 
+                <!-- Feedback Section -->
+                <div id="feedback" class="doc-section glass-panel">
+                    <div class="section-title">Feedback & Comments</div>
+                    
+                    <p style="color: rgba(255,255,255,0.7); margin-bottom: 20px; line-height: 1.6;">
+                        Have suggestions, found bugs, or want to share your experience? We'd love to hear from you! Your feedback helps improve this API.
+                    </p>
+
+                    <div class="feedback-form">
+                        <div class="form-group">
+                            <label for="feedbackName">Your Name</label>
+                            <input type="text" id="feedbackName" placeholder="Enter your name (optional)" />
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackComment">Your Comment</label>
+                            <textarea id="feedbackComment" placeholder="Share your thoughts, suggestions, or report issues..." rows="5"></textarea>
+                        </div>
+                        <button class="submit-button" onclick="submitFeedback()">Submit Feedback</button>
+                        <div id="feedbackMessage" class="feedback-message"></div>
+                    </div>
+                </div>
+
                 </div>
             </div>
         </div>
 
     <footer>GraphQL Bookstore API</footer>
+
+    <script>
+        function submitFeedback() {
+            const name = document.getElementById('feedbackName').value.trim();
+            const comment = document.getElementById('feedbackComment').value.trim();
+            const messageEl = document.getElementById('feedbackMessage');
+            const submitBtn = document.querySelector('.submit-button');
+
+            if (!comment) {
+                messageEl.className = 'feedback-message error';
+                messageEl.textContent = 'Please enter a comment before submitting.';
+                messageEl.style.display = 'block';
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Submitting...';
+            messageEl.style.display = 'none';
+
+            const formUrl = 'https://script.google.com/macros/s/AKfycbwKpb-m9fqrNY8ZpdLQfiAYWrvCzzHgaAEIQQfWV7o4srGT8YrskPNcDU2Y4dLa-TU_/exec';
+
+            fetch(formUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    comment: comment
+                })
+            }).then(() => {
+                messageEl.className = 'feedback-message success';
+                messageEl.textContent = 'Thank you for your feedback!';
+                messageEl.style.display = 'block';
+                document.getElementById('feedbackName').value = '';
+                document.getElementById('feedbackComment').value = '';
+            }).catch((error) => {
+                messageEl.className = 'feedback-message error';
+                messageEl.textContent = 'Failed to submit feedback. Please try again.';
+                messageEl.style.display = 'block';
+            }).finally(() => {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit Feedback';
+            });
+        }
+    </script>
 
     <script>
         var token = localStorage.getItem("token") || "";

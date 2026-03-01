@@ -542,6 +542,24 @@ The server contains additional advanced features for expert-level testing:
 379: **NOTE**: No built-in GraphQL Playground. Use external tools like:
 380: - https://studio.apollographql.com/
 381: - Postman, Insomnia, curl, Burp Suite
+
+### Web UI Documentation Structure
+The web documentation is organized as follows:
+
+| Section | Description |
+|---------|-------------|
+| **Welcome** | Introduction to the API, purpose, business flow, default credentials |
+| **Local Installation** | Step-by-step guide to run the API locally |
+| **Docker Installation** | Quick Docker setup guide |
+| **How To Send Requests** | API endpoints, request structure, cURL, JavaScript, Postman examples |
+| **Data Types & Schema** | Main data types, field selection, GraphQL introspection |
+| **Queries** | All available queries (public and protected) |
+| **Mutations** | All available mutations grouped by category |
+| **Vulnerabilities** | Security considerations (no exploitation details) |
+
+**API Endpoints:**
+- Local: `http://localhost:4000/graphql`
+- Live: `https://api.graphqlbook.store/graphql`
 382: 
 383: **API Link Bar Features:**
 384: - Glass-styled icon with green gradient and pulse animation effect
