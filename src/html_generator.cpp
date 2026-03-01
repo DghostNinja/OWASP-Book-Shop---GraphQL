@@ -1059,12 +1059,57 @@ string generateLandingHTML() {
             opacity: 0;
             pointer-events: none;
         }
+        .floating-feedback {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(74, 222, 128, 0.4);
+            z-index: 1000;
+            transition: all 0.3s ease;
+            text-decoration: none;
+        }
+        .floating-feedback:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 35px rgba(74, 222, 128, 0.5);
+        }
+        .floating-feedback svg {
+            color: #000;
+            width: 28px;
+            height: 28px;
+        }
+        @media (max-width: 600px) {
+            .floating-feedback {
+                bottom: 20px;
+                right: 20px;
+                width: 50px;
+                height: 50px;
+            }
+            .floating-feedback svg {
+                width: 24px;
+                height: 24px;
+            }
+        }
     </style>
 </head>
 <body>
     <div class="glow glow-1"></div>
     <div class="glow glow-2"></div>
     <div class="glow glow-3"></div>
+
+    <a href="javascript:void(0)" class="floating-feedback" onclick="showDocsAndFeedback()" title="Leave Feedback">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+    </a>
+
     <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
 
         <nav class="nav-menu">
@@ -2637,6 +2682,33 @@ docker-compose up --build</pre>
             var overlay = document.getElementById("sidebarOverlay");
             if (sidebar) sidebar.classList.remove("active");
             if (overlay) overlay.classList.remove("active");
+            
+            // Scroll to the section
+            setTimeout(function() {
+                targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+
+        function showDocsAndFeedback() {
+            var docsPage = document.getElementById("docsPage");
+            var homePage = document.getElementById("homePage");
+            
+            // If we're on home page, switch to docs first
+            if (homePage && homePage.style.display !== "none") {
+                homePage.style.display = "none";
+                docsPage.style.display = "block";
+                
+                var navLinks = document.querySelectorAll(".nav-link");
+                navLinks.forEach(function(link) {
+                    link.classList.remove("active");
+                });
+                if (navLinks[1]) {
+                    navLinks[1].classList.add("active");
+                }
+            }
+            
+            // Then show feedback section
+            showSection('feedback');
         }
 
         function copyToClipboard(elementId) {
