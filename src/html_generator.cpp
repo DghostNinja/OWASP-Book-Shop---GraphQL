@@ -1097,6 +1097,51 @@ string generateLandingHTML() {
                 height: 24px;
             }
         }
+        .doc-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .doc-nav-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: rgba(255,255,255,0.8);
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
+        .doc-nav-btn:hover {
+            background: rgba(255,255,255,0.1);
+            border-color: rgba(255,255,255,0.2);
+            color: #fff;
+        }
+        .doc-nav-btn.prev { margin-right: auto; }
+        .doc-nav-btn.next { margin-left: auto; }
+        .doc-nav-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+        @media (max-width: 600px) {
+            .doc-nav {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .doc-nav-btn {
+                width: 100%;
+                justify-content: center;
+            }
+            .doc-nav-btn.prev { margin-right: 0; }
+            .doc-nav-btn.next { margin-left: 0; }
+        }
     </style>
 </head>
 <body>
@@ -1485,7 +1530,16 @@ string generateLandingHTML() {
    └─→ Receive events: order created, paid, cancelled, etc.</pre>
                     </div>
 
-                    
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="return false;" style="visibility: hidden;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('local-install'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- How To Send Requests Section -->
@@ -1708,6 +1762,17 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 <span style="color: #60a5fa;">Staff:</span>   username: staff   password: password123   role: staff
 <span style="color: #fbbf24;">User:</span>    username: user    password: password123   role: user</pre>
                     </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('docker-install'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('data-types'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Local Installation Section -->
@@ -1750,6 +1815,17 @@ cd GraphQL-Bookstore
                         <pre style="color: #a3a3a3; line-height: 1.8;"><span style="color: #4ade80;">UI Guide:</span>   http://localhost:4000
 <span style="color: #60a5fa;">API Endpoint:</span>    http://localhost:4000/graphql</pre>
                     </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('overview'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('docker-install'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Docker Installation Section -->
@@ -1782,6 +1858,17 @@ docker-compose up --build</pre>
                     <div class="section-title" style="margin-top: 20px;">Stop the Server</div>
                     <div class="code-block">
                         <pre style="color: #a3a3a3;">docker-compose down</pre>
+                    </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('local-install'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('how-to-send-requests'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
                     </div>
                 </div>
 
@@ -1992,6 +2079,17 @@ docker-compose up --build</pre>
 <span style="color: #fbbf24;">bookReviews</span>(bookId: Int!)
   - bookId: Required - filter reviews by book</pre>
                     </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('how-to-send-requests'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('queries'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Queries Section -->
@@ -2080,6 +2178,17 @@ docker-compose up --build</pre>
                                 <code id="query-webhooks">{ webhooks { id url events isActive } }</code>
                             </div>
                         </div>
+                    </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('data-types'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('mutations'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
                     </div>
                 </div>
 
@@ -2232,6 +2341,17 @@ docker-compose up --build</pre>
                             </div>
                         </div>
                     </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('queries'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('vulnerabilities'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Vulnerabilities Section -->
@@ -2247,6 +2367,17 @@ docker-compose up --build</pre>
                             <div style="margin-bottom: 10px;">&#8226; <strong>XML Handling</strong> - Some endpoints accept XML payloads</div>
                             <div style="margin-bottom: 10px;">&#8226; <strong>Debug Endpoints</strong> - Internal information may be exposed</div>
                         </div>
+                    </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('mutations'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('mcp-docs'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
                     </div>
                 </div>
 
@@ -2295,52 +2426,52 @@ API_URL=https://api.graphqlbook.store/graphql npm start</pre>
                         The MCP server exposes 25 tools organized by category:
                     </p>
                     
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px;">
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Authentication</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 20px;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Authentication</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_login<br>
                                 bookstore_register<br>
                                 bookstore_me
                             </div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Books</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Books</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_books<br>
                                 bookstore_book<br>
                                 bookstore_search
                             </div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Cart</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Cart</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_cart<br>
                                 bookstore_add_to_cart<br>
                                 bookstore_remove_from_cart
                             </div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Orders</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Orders</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_orders<br>
                                 bookstore_create_order<br>
                                 bookstore_purchase_cart<br>
                                 bookstore_cancel_order
                             </div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Reviews</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Reviews</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_create_review<br>
                                 bookstore_delete_review<br>
                                 bookstore_book_reviews<br>
                                 bookstore_my_reviews
                             </div>
                         </div>
-                        <div style="background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
-                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 8px;">Other</div>
-                            <div style="color: rgba(255,255,255,0.6); font-size: 13px; line-height: 1.6;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px;">
+                            <div style="color: #4fd1c5; font-weight: bold; margin-bottom: 6px; font-size: 14px;">Other</div>
+                            <div style="color: rgba(255,255,255,0.6); font-size: 11px; line-height: 1.5;">
                                 bookstore_update_profile<br>
                                 bookstore_apply_coupon<br>
                                 bookstore_webhooks<br>
@@ -2353,8 +2484,8 @@ API_URL=https://api.graphqlbook.store/graphql npm start</pre>
                     <p style="color: rgba(255,255,255,0.6); margin-bottom: 10px; line-height: 1.6;">
                         Add the following to your Claude Desktop config file:
                     </p>
-                    <div class="code-block">
-                        <pre style="color: #a3a3a3; line-height: 1.6;">
+                    <div class="code-block" style="overflow-x: auto;">
+                        <pre style="color: #a3a3a3; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word;">
 {
   "mcpServers": {
     "bookstore": {
@@ -2372,7 +2503,8 @@ API_URL=https://api.graphqlbook.store/graphql npm start</pre>
                     </p>
 
                     <div class="section-title" style="margin-top: 25px;">Environment Variables</div>
-                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                    <div style="overflow-x: auto; margin-bottom: 20px;">
+                        <table style="width: 100%; min-width: 300px; border-collapse: collapse;">
                         <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
                             <th style="text-align: left; padding: 10px; color: #4fd1c5;">Variable</th>
                             <th style="text-align: left; padding: 10px; color: #4fd1c5;">Default</th>
@@ -2384,10 +2516,22 @@ API_URL=https://api.graphqlbook.store/graphql npm start</pre>
                             <td style="padding: 10px; color: rgba(255,255,255,0.6);">Bookstore API endpoint</td>
                         </tr>
                     </table>
+                    </div>
 
                     <p style="color: rgba(255,255,255,0.6); margin-bottom: 20px; line-height: 1.6;">
                         See <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 3px;">mcp/README.md</code> for detailed documentation.
                     </p>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('vulnerabilities'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="showSection('feedback'); return false;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <!-- Feedback Section -->
@@ -2414,6 +2558,17 @@ API_URL=https://api.graphqlbook.store/graphql npm start</pre>
                         </div>
                         <button class="submit-button" onclick="submitFeedback()">Submit Feedback</button>
                         <div id="feedbackMessage" class="feedback-message"></div>
+                    </div>
+
+                    <div class="doc-nav">
+                        <a href="#" class="doc-nav-btn prev" onclick="showSection('mcp-docs'); return false;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+                            Previous
+                        </a>
+                        <a href="#" class="doc-nav-btn next" onclick="return false;" style="visibility: hidden;">
+                            Next
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                        </a>
                     </div>
                 </div>
 
