@@ -1,0 +1,14 @@
+{
+  "name": "bookstore-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server for GraphQL Bookstore API",
+  "type": "module",
+  "main": "mcp_server.mjs",
+  "scripts": {
+    "start": "node mcp_server.mjs",
+    "test": "node --input-type=module -e \"import('./mcp_client.mjs').then(m => m.login().then(r => console.log(JSON.stringify(r, null, 2))))\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0"
+  }
+}

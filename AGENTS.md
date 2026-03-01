@@ -556,6 +556,7 @@ The web documentation is organized as follows:
 | **Queries** | All available queries (public and protected) |
 | **Mutations** | All available mutations grouped by category |
 | **Vulnerabilities** | Security considerations (no exploitation details) |
+| **Feedback** | Anonymous feedback form connected to Google Sheets |
 
 **API Endpoints:**
 - Local: `http://localhost:4000/graphql`
@@ -578,7 +579,48 @@ The web documentation is organized as follows:
 397: - Separate Login and Register panels
 398: - JWT tokens stored in localStorage
 399: - Tokens automatically used for authenticated requests
-400: 
+
+### Feedback System
+The web UI includes an anonymous feedback form connected to Google Sheets:
+
+**Features:**
+- Anonymous comment submission (no login required)
+- Simple math CAPTCHA to prevent bot spam
+- Input sanitization to prevent XSS attacks
+- Rate limiting (30-second cooldown between submissions)
+- Honeypot field to catch automated bots
+
+**Floating Feedback Button:**
+- Green gradient chat icon fixed to bottom-right corner
+- Click to open feedback form from any page
+- Responsive design (smaller on mobile devices)
+
+**Google Sheets Integration:**
+- Submissions are sent to a Google Apps Script web app
+- Data is stored in Google Sheets with columns: Timestamp, Name, Comment
+
+**Spreadsheet Setup:**
+The Google Sheet should have these headers in row 1:
+- Column A: Timestamp
+- Column B: Name
+- Column C: Comment
+
+**Google Apps Script Code:**
+```javascript
+function doPost(e) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Sheet1');
+  const data = JSON.parse(e.postData.contents);
+  sheet.appendRow([
+    new Date(),
+    data.name || '',
+    data.comment || ''
+  ]);
+  return ContentService.createTextOutput(JSON.stringify({ success: true }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+```
+
+Deploy as Web App with "Anyone" access to allow anonymous submissions.400: 
 401: ### Fly.io Deployment
 402: App name: `graphql-bookstore`
 403: URL: https://graphql-bookstore.fly.dev

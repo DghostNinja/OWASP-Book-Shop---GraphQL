@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bookstore": {
+      "command": "node",
+      "args": ["mcp_server.mjs"],
+      "env": {
+        "API_URL": "http://localhost:4000/graphql"
+      }
+    }
+  }
+}
